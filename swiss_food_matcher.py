@@ -1,37 +1,34 @@
-import pandas as pd
-from rapidfuzz import process
+# swiss_food_matcher.py
 
+import pandas as pd
+from sentence_transformers import SentenceTransformer, util
+
+# Load model only once (global variable)
+model = SentenceTransformer("all-MiniLM-L6-v2")
+
+# Load and embed the food database
 def load_food_database(csv_path):
     df = pd.read_csv(csv_path)
     df["name_clean"] = df["name"].str.lower().str.strip()
+    df["embedding"] = model.encode(df["name_clean"].tolist(), convert_to_tensor=True)
     return df
 
+# Match a single food entity to the database using semantic similarity
 def match_entity(entity, food_db):
-    extracted = entity.get("extracted", "").lower().strip()
-    quantity = entity.get("quantity")
-    unit = entity.get("unit")
+    input_text = entity["extracted"].strip().lower()
+    input_embedding = model.encode(input_text, convert_to_tensor=True)
 
-    match_name, score, idx = process.extractOne(
-        extracted,
-        food_db["name_clean"],
-        score_cutoff=70  # Lower to catch minor variations
-    )
+    scores = util.pytorch_cos_sim(input_embedding, food_db["embedding"].tolist())[0]
+    best_idx = scores.argmax().item()
+    best_score = scores[best_idx].item()
 
-    if match_name:
-        match_row = food_db[food_db["name_clean"] == match_name].iloc[0]
-        return {
-            "extracted": entity.get("extracted"),
-            "recognized": match_row["name"],
-            "quantity": quantity,
-            "unit": unit,
-            "ID": match_row["ID"]
-        }
+    matched = food_db.iloc[best_idx]
 
-    # Fallback if no match
     return {
-        "extracted": entity.get("extracted"),
-        "recognized": None,
-        "quantity": quantity,
-        "unit": unit,
-        "ID": None
+        "extracted": entity["extracted"],
+        "recognized": matched["name"],
+        "quantity": entity.get("quantity"),
+        "unit": entity.get("unit"),
+        "ID": matched["ID"],
+        "score": round(best_score, 3)
     }

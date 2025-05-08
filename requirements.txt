@@ -4,3 +4,4 @@ pydub
 python-dotenv
 pandas
 rapidfuzz
+sentence-transformers
