@@ -5,6 +5,7 @@ from openai_stt import transcribe_with_openai
 from entity_extractor import extract_food_entities
 from swiss_food_matcher import load_food_database, match_entity
 import pandas as pd
+import os
 
 st.set_page_config(page_title="OpenAI Whisper Speech to Text Demo", layout="centered")
 st.title("🎙️ OpenAI Whisper Speech to Text Demo")
@@ -33,8 +34,16 @@ if uploaded_file:
         food_entities = extract_food_entities(transcript)
 
     with st.spinner("Matching to Swiss food database..."):
-        food_db = load_food_database("swiss_food_composition_database_small.csv")
+        
+        
+        csv_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
+        food_db = load_food_database(csv_path)
+        
+
         matches = [match_entity(entity, food_db) for entity in food_entities]
+        st.write("Raw matches output:")
+        st.write(matches)
+        
         df = pd.DataFrame(matches)
 
     st.subheader("🍽️ Food Entities Extracted & Matched")
