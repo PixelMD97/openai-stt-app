@@ -2,13 +2,12 @@ from rapidfuzz import process
 import pandas as pd
 
 def load_food_database(csv_path):
-    return pd.read_csv(csv_path)
+    food_db = pd.read_csv(csv_path)
+    food_db["name_lower"] = food_db["name"].str.lower().str.strip()
+    return food_db
 
 def match_entity(entity, food_db):
     extracted_name = entity["extracted"].strip().lower()
-
-    # Ensure comparison column exists
-    food_db["name_lower"] = food_db["name"].str.lower().str.strip()
 
     match_name, score, idx = process.extractOne(
         extracted_name,
