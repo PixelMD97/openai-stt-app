@@ -1,33 +1,35 @@
+# entity_extractor.py
+
 import openai
+import os
 import json
+from dotenv import load_dotenv
 
-def extract_food_entities(text: str):
-    PROMPT_TEMPLATE = """
-Extract a list of food items and amounts from the following meal description.
-Return it as JSON list of dictionaries with keys:
-- "extracted"
-- "quantity"
-- "unit"
+load_dotenv()
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
-Text:
-{text}
+SYSTEM_PROMPT = """
+You are a nutrition assistant. Extract food items with quantities and units from the given meal description.
+Return a JSON list like this:
+[
+  {"extracted": "banana", "quantity": 1, "unit": "piece"},
+  {"extracted": "milk", "quantity": 200, "unit": "ml"}
+]
+Only return valid JSON.
 """
 
-    response = openai.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "You are a helpful nutrition assistant."},
-            {"role": "user", "content": PROMPT_TEMPLATE.format(text=text)}
-        ],
-        temperature=0.2
-    )
-
-    raw_response = response.choices[0].message.content.strip()
-    print("🧠 LLM Raw Response:\n", raw_response)
-
+def extract_food_entities(transcript):
     try:
-        extracted_entities = json.loads(raw_response)
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": transcript}
+            ],
+            temperature=0,
+        )
+        content = response["choices"][0]["message"]["content"].strip()
+        entities = json.loads(content)
+        return entities, content
     except Exception as e:
-        extracted_entities = []
-
-    return extracted_entities, raw_response
+        return [], f"Error: {str(e)}"
