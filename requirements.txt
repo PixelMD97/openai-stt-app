@@ -1,4 +1,6 @@
 streamlit
 openai
-pydub 
+pydub
+python-dotenv
+pandas
 rapidfuzz

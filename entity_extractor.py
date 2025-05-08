@@ -3,10 +3,15 @@ import openai
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-EXTRACTION_PROMPT = """
-Extract the food entities and quantities from the following meal description. Return them as a JSON list with keys: "name", "quantity", and "unit". If unit is missing, guess it (e.g., g for solids, ml for liquids).
+PROMPT = """
+Extract food items from the following meal description. For each, return:
+- name
+- quantity
+- unit (like g, ml, piece)
 
-Meal description:
+Respond as a Python list of dicts with keys: name, quantity, unit.
+
+Text:
 "{text}"
 """
 
@@ -15,8 +20,12 @@ def extract_food_entities(text: str) -> list:
         model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "You are a helpful nutrition assistant."},
-            {"role": "user", "content": EXTRACTION_PROMPT.format(text=text)}
+            {"role": "user", "content": PROMPT.format(text=text)}
         ],
         temperature=0.2
     )
     content = response.choices[0].message.content.strip()
+    try:
+        return eval(content)
+    except Exception as e:
+        return []
