@@ -1,34 +1,37 @@
-from rapidfuzz import process
 import pandas as pd
+from rapidfuzz import process
 
 def load_food_database(csv_path):
-    food_db = pd.read_csv(csv_path)
-    food_db["name_lower"] = food_db["name"].str.lower().str.strip()
-    return food_db
+    df = pd.read_csv(csv_path)
+    df["name_clean"] = df["name"].str.lower().str.strip()
+    return df
 
 def match_entity(entity, food_db):
-    extracted_name = entity["extracted"].strip().lower()
+    extracted = entity.get("extracted", "").lower().strip()
+    quantity = entity.get("quantity")
+    unit = entity.get("unit")
 
     match_name, score, idx = process.extractOne(
-        extracted_name,
-        food_db["name_lower"],
-        score_cutoff=80  # adjust if needed
+        extracted,
+        food_db["name_clean"],
+        score_cutoff=70  # Lower to catch minor variations
     )
 
     if match_name:
-        matched_row = food_db[food_db["name_lower"] == match_name].iloc[0]
+        match_row = food_db[food_db["name_clean"] == match_name].iloc[0]
         return {
-            "extracted": entity["extracted"],
-            "recognized": matched_row["name"],
-            "quantity": entity.get("quantity"),
-            "unit": entity.get("unit"),
-            "ID": matched_row["ID"]
+            "extracted": entity.get("extracted"),
+            "recognized": match_row["name"],
+            "quantity": quantity,
+            "unit": unit,
+            "ID": match_row["ID"]
         }
 
+    # Fallback if no match
     return {
-        "extracted": entity["extracted"],
+        "extracted": entity.get("extracted"),
         "recognized": None,
-        "quantity": entity.get("quantity"),
-        "unit": entity.get("unit"),
+        "quantity": quantity,
+        "unit": unit,
         "ID": None
     }
