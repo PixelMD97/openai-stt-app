@@ -10,7 +10,8 @@ model = SentenceTransformer("all-MiniLM-L6-v2")
 def load_food_database(csv_path):
     df = pd.read_csv(csv_path)
     df["name_clean"] = df["name"].str.lower().str.strip()
-    df["embedding"] = model.encode(df["name_clean"].tolist(), convert_to_tensor=True)
+    df["embedding"] = model.encode(df["name_clean"].tolist(), convert_to_tensor=True).tolist()
+
     return df
 
 # Match a single food entity to the database using semantic similarity
