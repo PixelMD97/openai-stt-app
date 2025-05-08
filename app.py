@@ -32,19 +32,19 @@ if uploaded_file:
 
     with st.spinner("Extracting food entities..."):
         food_entities = extract_food_entities(transcript)
+        st.write("Extracted entities:")
+        st.write(food_entities)
 
     with st.spinner("Matching to Swiss food database..."):
-        
-        
         csv_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
         food_db = load_food_database(csv_path)
-        
-
         matches = [match_entity(entity, food_db) for entity in food_entities]
         st.write("Raw matches output:")
         st.write(matches)
-        
-        df = pd.DataFrame(matches)
 
     st.subheader("🍽️ Food Entities Extracted & Matched")
-    st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
+    if matches:
+        df = pd.DataFrame(matches)
+        st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
+    else:
+        st.warning("No food entities were matched. Please try with a different input.")
