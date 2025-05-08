@@ -37,3 +37,22 @@ if uploaded_file:
     st.subheader("📝 Transcription")
     st.write(transcript)
 
+
+
+from swiss_food_matcher import load_food_database, match_entity
+from entity_extractor import extract_food_entities
+import pandas as pd
+
+# Load food DB
+food_db = load_food_database("swiss_food_composition_database_small.csv")
+
+# Extract entities via OpenAI
+entities = extract_food_entities(transcript)
+
+# Match entities to DB
+results = [match_entity(e, food_db) for e in entities]
+
+# Show table
+df = pd.DataFrame(results)
+st.subheader("🍽️ Food Entities Extracted & Matched")
+st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
