@@ -1,53 +1,33 @@
-import os
 import openai
 import json
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
+def extract_food_entities(text: str):
+    PROMPT_TEMPLATE = """
+Extract a list of food items and amounts from the following meal description.
+Return it as JSON list of dictionaries with keys:
+- "extracted"
+- "quantity"
+- "unit"
 
-PROMPT_TEMPLATE = """
-Extract a list of food items with quantity and unit from the meal description below.
-
-Return the result strictly as a JSON list like:
-[
-  {{ "food": "pizza", "quantity": 3, "unit": "slice" }},
-  {{ "food": "tomato", "quantity": 1, "unit": "whole" }}
-]
-
-Meal description:
-"{text}"
+Text:
+{text}
 """
 
-def extract_food_entities(text: str) -> list:
+    response = openai.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a helpful nutrition assistant."},
+            {"role": "user", "content": PROMPT_TEMPLATE.format(text=text)}
+        ],
+        temperature=0.2
+    )
+
+    raw_response = response.choices[0].message.content.strip()
+    print("🧠 LLM Raw Response:\n", raw_response)
+
     try:
-        response = openai.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "You are a helpful nutrition assistant."},
-                {"role": "user", "content": PROMPT_TEMPLATE.format(text=text)}
-            ],
-            temperature=0.2
-        )
-
-        # 👇 ADD THIS
-        print("LLM Raw Response:\n", response.choices[0].message.content.strip())
-
-        content = response.choices[0].message.content.strip()
-
-        # Try parsing JSON directly
-        return json.loads(content)
+        extracted_entities = json.loads(raw_response)
     except Exception as e:
-        print(f"Extraction failed: {e}")
-        return []
+        extracted_entities = []
 
-
-response = openai.chat.completions.create(
-    model="gpt-3.5-turbo",
-    messages=[
-        {"role": "system", "content": "You are a helpful nutrition assistant."},
-        {"role": "user", "content": PROMPT_TEMPLATE.format(text=text)}
-    ],
-    temperature=0.2
-)
-
-# 👇 ADD THIS
-print("🧠 LLM Raw Response:\n", response.choices[0].message.content.strip())
+    return extracted_entities, raw_response
