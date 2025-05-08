@@ -1,25 +1,35 @@
-from rapidfuzz import fuzz
+from rapidfuzz import process
 import pandas as pd
 
-def load_food_database(csv_path: str) -> pd.DataFrame:
+def load_food_database(csv_path):
     return pd.read_csv(csv_path)
 
-def match_entity(entity: dict, food_db: pd.DataFrame) -> dict:
-    best_match = None
-    best_score = 0
+def match_entity(entity, food_db):
+    extracted_name = entity["extracted"].strip().lower()
 
-    for _, row in food_db.iterrows():
-        score = fuzz.partial_ratio(entity["extracted"].lower(), row["name"].lower())
-        if score > best_score:
-            best_score = score
-            best_match = row
+    # Ensure comparison column exists
+    food_db["name_lower"] = food_db["name"].str.lower().str.strip()
 
-    result = {
-        "extracted": entity.get("extracted"),
+    match_name, score, idx = process.extractOne(
+        extracted_name,
+        food_db["name_lower"],
+        score_cutoff=80  # adjust if needed
+    )
+
+    if match_name:
+        matched_row = food_db[food_db["name_lower"] == match_name].iloc[0]
+        return {
+            "extracted": entity["extracted"],
+            "recognized": matched_row["name"],
+            "quantity": entity.get("quantity"),
+            "unit": entity.get("unit"),
+            "ID": matched_row["ID"]
+        }
+
+    return {
+        "extracted": entity["extracted"],
+        "recognized": None,
         "quantity": entity.get("quantity"),
         "unit": entity.get("unit"),
-        "recognized": best_match["name"] if best_score > 70 else "No match",
-        "ID": best_match["ID"] if best_score > 70 else None
+        "ID": None
     }
-
-    return result
