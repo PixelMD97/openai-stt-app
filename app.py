@@ -31,20 +31,27 @@ if uploaded_file:
     st.write(transcript)
 
     with st.spinner("Extracting food entities..."):
-        food_entities = extract_food_entities(transcript)
-        st.write("Extracted entities:")
+        food_entities, response_text = extract_food_entities(transcript)
+        st.subheader("🧠 Raw LLM Output")
+        st.code(response_text)
+
+        st.markdown("**Extracted entities:**")
         st.write(food_entities)
 
     with st.spinner("Matching to Swiss food database..."):
         csv_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
         food_db = load_food_database(csv_path)
         matches = [match_entity(entity, food_db) for entity in food_entities]
-        st.write("Raw matches output:")
+
+        st.markdown("**Raw matches output:**")
         st.write(matches)
 
     st.subheader("🍽️ Food Entities Extracted & Matched")
     if matches:
         df = pd.DataFrame(matches)
-        st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
+        try:
+            st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
+        except KeyError:
+            st.dataframe(df)  # Fallback if columns are missing
     else:
         st.warning("No food entities were matched. Please try with a different input.")

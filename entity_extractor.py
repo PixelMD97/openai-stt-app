@@ -27,6 +27,10 @@ def extract_food_entities(text: str) -> list:
             ],
             temperature=0.2
         )
+
+        # 👇 ADD THIS
+        print("LLM Raw Response:\n", response.choices[0].message.content.strip())
+
         content = response.choices[0].message.content.strip()
 
         # Try parsing JSON directly
@@ -34,3 +38,16 @@ def extract_food_entities(text: str) -> list:
     except Exception as e:
         print(f"Extraction failed: {e}")
         return []
+
+
+response = openai.chat.completions.create(
+    model="gpt-3.5-turbo",
+    messages=[
+        {"role": "system", "content": "You are a helpful nutrition assistant."},
+        {"role": "user", "content": PROMPT_TEMPLATE.format(text=text)}
+    ],
+    temperature=0.2
+)
+
+# 👇 ADD THIS
+print("🧠 LLM Raw Response:\n", response.choices[0].message.content.strip())
