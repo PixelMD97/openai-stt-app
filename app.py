@@ -11,7 +11,7 @@ import pandas as pd
 import os
 
 st.set_page_config(page_title="OpenAI Whisper Speech to Text Demo", layout="centered")
-st.title("🎙️ OpenAI Whisper Speech to Text Demo")
+st.title("Pathmate Speech to Text Demo")
 st.caption("Upload your meal voice log (.mp3, .wav, .ogg, .mp4) to get a transcription.")
 
 uploaded_file = st.file_uploader("Drag and drop an MP3/WAV/OGG/MP4 file here", type=["mp3", "wav", "ogg", "mp4"])
