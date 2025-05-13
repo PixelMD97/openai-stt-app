@@ -7,3 +7,4 @@ rapidfuzz
 sentence-transformers
 ibm-watson
 git+https://github.com/stefanrmmr/streamlit_audio_recorder.git
+ffmpeg-python
