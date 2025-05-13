@@ -1,10 +1,11 @@
 import streamlit as st
 import streamlit.components.v1 as components
+import base64
 import tempfile
 import os
-import base64
 from pydub import AudioSegment
 import pandas as pd
+
 
 from openai_stt import transcribe_with_openai
 from entity_extractor import extract_food_entities
