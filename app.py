@@ -1,34 +1,97 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import tempfile
 import os
+import base64
 from pydub import AudioSegment
-from streamlit_audio_recorder import audio_recorder
+import pandas as pd
 
 from openai_stt import transcribe_with_openai
 from entity_extractor import extract_food_entities
 from swiss_food_matcher import load_food_database, match_entity
-import pandas as pd
 
-st.set_page_config(page_title="OpenAI Whisper Speech to Text Demo", layout="centered")
+
+st.set_page_config(page_title="Pathmate Speech to Text Demo", layout="centered")
 st.title("Pathmate Speech to Text Demo")
 st.caption("Record or upload your meal voice log to get a transcription.")
 
-# === Recording and Upload Options ===
-st.subheader("🎤 Step 1: Record or Upload")
-audio_bytes = audio_recorder(pause_threshold=1.0)
-uploaded_file = st.file_uploader("...or upload MP3/WAV/OGG/MP4 file", type=["mp3", "wav", "ogg", "mp4"])
 
+# === Option A: HTML Recording ===
+st.subheader("🎤 Step 1: Record or Upload")
+st.markdown("#### Option A: Record voice input")
+
+audio_html = """
+<script>
+let mediaRecorder;
+let audioChunks = [];
+let isRecording = false;
+
+async function startRecording() {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream);
+    mediaRecorder.start();
+
+    audioChunks = [];
+    mediaRecorder.ondataavailable = event => {
+        if (event.data.size > 0) {
+            audioChunks.push(event.data);
+        }
+    };
+
+    mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+        const reader = new FileReader();
+        reader.readAsDataURL(audioBlob);
+        reader.onloadend = () => {
+            const base64String = reader.result.split(',')[1];
+            const queryString = "?audio=" + encodeURIComponent(base64String);
+            window.location.search = queryString;
+        };
+    };
+}
+
+function toggleRecording() {
+    if (!isRecording) {
+        startRecording();
+        document.getElementById("recordButton").innerText = "Stop Recording";
+        isRecording = true;
+    } else {
+        mediaRecorder.stop();
+        document.getElementById("recordButton").innerText = "Start Recording";
+        isRecording = false;
+    }
+}
+
+window.addEventListener("DOMContentLoaded", function() {
+    const button = document.createElement("button");
+    button.id = "recordButton";
+    button.innerText = "Start Recording";
+    button.onclick = toggleRecording;
+    document.body.appendChild(button);
+});
+</script>
+"""
+components.html(audio_html, height=100)
+
+
+# === Option B: File Upload ===
+uploaded_file = st.file_uploader("#### Option B: Or upload MP3/WAV/OGG/MP4 file", type=["mp3", "wav", "ogg", "mp4"])
+
+# === Handle Inputs ===
 tmp_path = None
 
-# === Handle Recorded Audio ===
-if audio_bytes:
-    st.success("✅ Audio recorded successfully.")
+# From HTML recording
+query_audio = st.experimental_get_query_params().get("audio")
+if query_audio:
+    st.success("✅ Audio recorded.")
+    audio_bytes = base64.b64decode(query_audio[0])
     st.audio(audio_bytes, format="audio/wav")
+
     with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as f:
         f.write(audio_bytes)
         tmp_path = f.name
 
-# === Handle Uploaded File ===
+# From uploaded file
 elif uploaded_file:
     st.success("✅ File uploaded successfully.")
     with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
@@ -41,7 +104,8 @@ elif uploaded_file:
         audio.export(tmp_path_mp3, format="mp3")
         tmp_path = tmp_path_mp3
 
-# === Continue Only if we have an audio path ===
+
+# === Proceed if we have audio ===
 if tmp_path:
     audio = AudioSegment.from_file(tmp_path)
     wav_path = tmp_path.replace(".mp3", ".wav")
