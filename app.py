@@ -11,8 +11,16 @@ import os
 import requests
 import json
 from datetime import datetime
+import numpy as np
 
 # --------- Google Sheets Logger ---------
+def make_json_serializable(obj):
+    if isinstance(obj, np.generic):
+        return obj.item()
+    if isinstance(obj, (datetime,)):
+        return obj.isoformat()
+    return obj
+
 def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts):
     url = "https://script.google.com/macros/s/AKfycbwMRxcoQarz8GdxxDGUTBmY-jfzPqXlBRD-DfFsiDX1PiNXieNGc4nTB1_Qo-Cj9pRd/exec"
     payload = {
@@ -25,17 +33,24 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
     }
 
     try:
-        response = requests.post(url, json=payload)
-        response.raise_for_status()  # Raises error if status code is not 200
+        cleaned = json.loads(json.dumps(payload, default=make_json_serializable))  # <- Fix
+        response = requests.post(url, json=cleaned)
+        response.raise_for_status()
         print("✅ Logged to Google Sheets:", response.text)
     except Exception as e:
         print("❌ Failed to log to Sheets:", e)
-        print("📨 Payload was:", json.dumps(payload, indent=2))
-        if 'response' in locals():
-            print("📬 Response:", response.status_code)
-            print("📬 Response text:", response.text)
-        else:
-            print("📬 No HTTP response received.")
+
+# --------- Highlighting ---------
+def highlight_transcript(text, entities):
+    highlighted = text
+    for ent in sorted(entities, key=lambda e: -len(e["extracted"])):
+        highlighted = highlighted.replace(
+            str(ent["quantity"]), f'<span style="background-color:#40e0d0;">{ent["quantity"]}</span>'
+        )
+        highlighted = highlighted.replace(
+            ent["extracted"], f'<span style="background-color:#90ee90;">{ent["extracted"]}</span>'
+        )
+    return highlighted
 
 # --------- Streamlit UI ---------
 st.set_page_config(page_title="PATHMATE - Speech to Text Demo", layout="centered")
@@ -49,7 +64,6 @@ if uploaded_file:
         tmp_file.write(uploaded_file.read())
         tmp_path = tmp_file.name
 
-    # Convert to mp3 if needed
     if tmp_path.endswith((".ogg", ".wav", ".mp4")):
         audio = AudioSegment.from_file(tmp_path)
         tmp_path_mp3 = tmp_path + ".converted.mp3"
@@ -59,17 +73,14 @@ if uploaded_file:
     audio = AudioSegment.from_file(tmp_path)
     wav_path = tmp_path.replace(".mp3", ".wav")
     audio.export(wav_path, format="wav")
-
     st.audio(wav_path, format="audio/wav")
 
-    # Transcription
     with st.spinner("Transcribing..."):
         transcript = transcribe_with_openai(tmp_path)
 
-    st.subheader("📝 Transcription")
-    st.write(transcript)
+    st.subheader("Transcription")
+    st.markdown(highlight_transcript(transcript, []), unsafe_allow_html=True)
 
-    # Entity Extraction
     with st.spinner("Extracting food entities..."):
         food_entities, response_text = extract_food_entities(transcript)
         st.subheader("Raw LLM Output")
@@ -77,7 +88,9 @@ if uploaded_file:
         st.markdown("**Extracted entities:**")
         st.write(food_entities)
 
-    # Match to Swiss food DB
+    st.markdown("Highlighted Transcript with Entities")
+    st.markdown(highlight_transcript(transcript, food_entities), unsafe_allow_html=True)
+
     with st.spinner("Matching to Swiss food database..."):
         csv_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
         food_db = load_food_database(csv_path)
@@ -86,7 +99,6 @@ if uploaded_file:
     st.markdown("**Raw matches output:**")
     st.write(matches)
 
-    # Correction prompt
     st.subheader("Corrections (if needed)")
     corrections = []
     for match in matches:
@@ -106,20 +118,34 @@ if uploaded_file:
         else:
             corrections.append(match)
 
-    # Display final table
     st.subheader("🍽️ Food Entities Extracted & Matched")
     if corrections:
         df = pd.DataFrame(corrections)
         st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
 
-        # Send to Google Sheets
+        #Send to Google Sheets
         send_to_google_sheets(
             meal_id=f"meal_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             user_id="anon_user",
             raw_text=transcript,
             entities=food_entities,
             matches=corrections,
-            prompts=[]  # Optional: extend later
+            prompts=[]
+        )
+
+        # Export buttons
+        st.download_button(
+            "📥 Download JSON",
+            data=json.dumps(corrections, indent=2, default=make_json_serializable),
+            file_name="meal_log.json",
+            mime="application/json"
+        )
+
+        st.download_button(
+            "📥 Download CSV",
+            data=df.to_csv(index=False),
+            file_name="meal_log.csv",
+            mime="text/csv"
         )
     else:
         st.warning("No food entities were matched. Please try with a different input.")
