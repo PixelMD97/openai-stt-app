@@ -41,17 +41,42 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
         print("❌ Failed to log to Sheets:", e)
 
 # --------- Highlighting ---------
+
+import re
+
 def highlight_transcript(text, entities):
     highlighted = text
-    for ent in sorted(entities, key=lambda e: -len(e["extracted"])):
-        if str(ent["quantity"]) in highlighted:
-            highlighted = highlighted.replace(
-                str(ent["quantity"]), f'<span style="background-color:#40e0d0;">{ent["quantity"]}</span>'
-            )
-        if ent["extracted"] in highlighted:
-            highlighted = highlighted.replace(
-                ent["extracted"], f'<span style="background-color:#90ee90;">{ent["extracted"]}</span>'
-            )
+
+    # Sort to replace longer matches first
+    entities_sorted = sorted(entities, key=lambda e: -len(str(e.get("extracted", ""))))
+
+    for ent in entities_sorted:
+        food = ent.get("extracted", "").strip()
+        quantity = str(ent.get("quantity", "")).strip()
+        unit = ent.get("unit", "").strip()
+
+        # Highlight "40 grams", "1 tablespoon", etc.
+        if quantity and unit:
+            pattern = rf"\b{quantity}\s+{unit}\b"
+            highlighted = re.sub(pattern, 
+                                 rf'<span style="background-color:#40e0d0;">\g<0></span>', 
+                                 highlighted)
+
+        # Highlight quantity alone if above didn't match
+        if quantity:
+            pattern = rf"\b{quantity}\b"
+            highlighted = re.sub(pattern, 
+                                 rf'<span style="background-color:#40e0d0;">\g<0></span>', 
+                                 highlighted)
+
+        # Highlight food term (green)
+        if food:
+            pattern = rf"\b{re.escape(food)}\b"
+            highlighted = re.sub(pattern, 
+                                 rf'<span style="background-color:#90ee90;">\g<0></span>', 
+                                 highlighted, 
+                                 flags=re.IGNORECASE)
+
     return highlighted
 
 # --------- Streamlit UI ---------
