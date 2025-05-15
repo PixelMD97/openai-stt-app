@@ -1,6 +1,5 @@
 #16:40 15.5
 
-
 import streamlit as st
 import tempfile
 from pydub import AudioSegment
@@ -30,7 +29,7 @@ def clean_list_for_json(data):
 
 # --------- Google Sheets Logger ---------
 def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts):
-    url = "https://script.google.com/macros/s/YOUR_SCRIPT_URL/exec"  # <<< REPLACE ME
+    url = "https://script.google.com/macros/s/YOUR_SCRIPT_URL/exec"  # <<< REPLACE
     payload = {
         "meal_id": meal_id,
         "user_id": user_id,
@@ -47,12 +46,10 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
         print("✅ Logged to Google Sheets:", response.text)
     except Exception as e:
         print("❌ Failed to log to Sheets:", e)
-        print("📨 Payload was:", json.dumps(payload, indent=2))
+        print("📨 Payload was:", json.dumps(payload, indent=2, default=make_json_serializable))
         if 'response' in locals():
             print("📬 Response:", response.status_code)
             print("📬 Response text:", response.text)
-        else:
-            print("📬 No HTTP response received.")
 
 # --------- Highlighting ---------
 def highlight_transcript(text, entities):
@@ -67,27 +64,17 @@ def highlight_transcript(text, entities):
         quantity = str(ent.get("quantity", "") or "").strip()
         unit = str(ent.get("unit", "") or "").strip()
 
-        # Highlight full "quantity unit"
         if quantity and unit:
             pattern = rf"\b{re.escape(quantity)}\s+{re.escape(unit)}\b"
-            highlighted = re.sub(pattern,
-                                 rf'<span style="background-color:#40e0d0;">\g<0></span>',
-                                 highlighted)
+            highlighted = re.sub(pattern, rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted)
 
-        # Highlight just quantity
         if quantity:
             pattern = rf"\b{re.escape(quantity)}\b"
-            highlighted = re.sub(pattern,
-                                 rf'<span style="background-color:#40e0d0;">\g<0></span>',
-                                 highlighted)
+            highlighted = re.sub(pattern, rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted)
 
-        # Highlight food
         if food:
             pattern = rf"\b{re.escape(food)}\b"
-            highlighted = re.sub(pattern,
-                                 rf'<span style="background-color:#90ee90;">\g<0></span>',
-                                 highlighted,
-                                 flags=re.IGNORECASE)
+            highlighted = re.sub(pattern, rf'<span style="background-color:#90ee90;">\g<0></span>', highlighted, flags=re.IGNORECASE)
 
     return highlighted
 
@@ -103,7 +90,6 @@ if uploaded_file:
         tmp_file.write(uploaded_file.read())
         tmp_path = tmp_file.name
 
-    # Convert to mp3
     if tmp_path.endswith((".ogg", ".wav", ".mp4")):
         audio = AudioSegment.from_file(tmp_path)
         tmp_path_mp3 = tmp_path + ".converted.mp3"
@@ -130,7 +116,7 @@ if uploaded_file:
         st.markdown("Extracted entities:")
         st.write(food_entities)
 
-    # Quantity clarification
+    # Quantity Clarification
     st.subheader("Clarify missing quantities")
     clarified_entities = []
     clarification_prompts = []
@@ -150,7 +136,7 @@ if uploaded_file:
             )
             if clarification > 0:
                 entity["quantity"] = clarification
-                entity["unit"] = unit or "piece"  # Default unit fallback
+                entity["unit"] = unit or "piece"
                 clarified_entities.append(entity)
                 clarification_prompts.append({
                     "extracted": extracted,
@@ -160,7 +146,7 @@ if uploaded_file:
         else:
             clarified_entities.append(entity)
 
-    # ✅ Show updated highlights
+    # Highlight again after clarification
     st.markdown("Highlighted Transcript with Entities")
     st.markdown(highlight_transcript(transcript, clarified_entities), unsafe_allow_html=True)
 
@@ -170,23 +156,42 @@ if uploaded_file:
         food_db = load_food_database(csv_path)
         matches = [match_entity(entity, food_db) for entity in clarified_entities]
 
+    # Unmatched food clarification
+    final_matches = []
+    for match in matches:
+        if not match["recognized"] or match["ID"] is None:
+            correction = st.text_input(
+                f"🤔 Could not recognize food: '{match['extracted']}'. Please specify:",
+                key=f"manual_match_{match['extracted']}"
+            )
+            if correction:
+                new_match = match_entity({"extracted": correction}, food_db)
+                new_match["quantity"] = match["quantity"]
+                new_match["unit"] = match["unit"]
+                final_matches.append(new_match)
+            else:
+                final_matches.append(match)
+        else:
+            final_matches.append(match)
+
     st.subheader("Matched Results")
-    df = pd.DataFrame(matches)
+    df = pd.DataFrame(final_matches)
     st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
 
-    # Logging and download
+    # Log to Google Sheets
     send_to_google_sheets(
         meal_id=f"meal_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         user_id="anon_user",
         raw_text=transcript,
         entities=clarified_entities,
-        matches=matches,
+        matches=final_matches,
         prompts=clarification_prompts
     )
 
+    # Download
     st.download_button(
         "Download JSON",
-        data=json.dumps(matches, indent=2, default=make_json_serializable),
+        data=json.dumps(final_matches, indent=2, default=make_json_serializable),
         file_name="meal_log.json",
         mime="application/json"
     )
@@ -197,4 +202,3 @@ if uploaded_file:
         file_name="meal_log.csv",
         mime="text/csv"
     )
-
