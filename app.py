@@ -19,7 +19,7 @@ def make_json_serializable(obj):
         return obj.item()
     if isinstance(obj, (datetime,)):
         return obj.isoformat()
-    return obj
+    return str(obj)
 
 def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts):
     url = "https://script.google.com/macros/s/AKfycbwMRxcoQarz8GdxxDGUTBmY-jfzPqXlBRD-DfFsiDX1PiNXieNGc4nTB1_Qo-Cj9pRd/exec"
@@ -33,7 +33,7 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
     }
 
     try:
-        cleaned = json.loads(json.dumps(payload, default=make_json_serializable))  # <- Fix
+        cleaned = json.loads(json.dumps(payload, default=make_json_serializable))
         response = requests.post(url, json=cleaned)
         response.raise_for_status()
         print("✅ Logged to Google Sheets:", response.text)
@@ -44,12 +44,14 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
 def highlight_transcript(text, entities):
     highlighted = text
     for ent in sorted(entities, key=lambda e: -len(e["extracted"])):
-        highlighted = highlighted.replace(
-            str(ent["quantity"]), f'<span style="background-color:#40e0d0;">{ent["quantity"]}</span>'
-        )
-        highlighted = highlighted.replace(
-            ent["extracted"], f'<span style="background-color:#90ee90;">{ent["extracted"]}</span>'
-        )
+        if str(ent["quantity"]) in highlighted:
+            highlighted = highlighted.replace(
+                str(ent["quantity"]), f'<span style="background-color:#40e0d0;">{ent["quantity"]}</span>'
+            )
+        if ent["extracted"] in highlighted:
+            highlighted = highlighted.replace(
+                ent["extracted"], f'<span style="background-color:#90ee90;">{ent["extracted"]}</span>'
+            )
     return highlighted
 
 # --------- Streamlit UI ---------
@@ -123,20 +125,23 @@ if uploaded_file:
         df = pd.DataFrame(corrections)
         st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
 
-        #Send to Google Sheets
+        # Clean data for logging/export
+        serializable_corrections = json.loads(json.dumps(corrections, default=make_json_serializable))
+
+        # ✅ Send to Google Sheets
         send_to_google_sheets(
             meal_id=f"meal_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
             user_id="anon_user",
             raw_text=transcript,
             entities=food_entities,
-            matches=corrections,
+            matches=serializable_corrections,
             prompts=[]
         )
 
-        # Export buttons
+        # ⬇️ Export buttons
         st.download_button(
             "📥 Download JSON",
-            data=json.dumps(corrections, indent=2, default=make_json_serializable),
+            data=json.dumps(serializable_corrections, indent=2),
             file_name="meal_log.json",
             mime="application/json"
         )
