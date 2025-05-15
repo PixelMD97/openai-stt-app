@@ -29,7 +29,7 @@ def clean_list_for_json(data):
 
 # --------- Google Sheets Logger ---------
 def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts):
-    url = "https://script.google.com/macros/s/YOUR_SCRIPT_URL/exec"  # <<< Replace with your own
+    url = "https://script.google.com/macros/s/YOUR_SCRIPT_URL/exec"  # <<< Replace this
     payload = {
         "meal_id": meal_id,
         "user_id": user_id,
@@ -79,7 +79,7 @@ def highlight_transcript(text, entities):
     return highlighted
 
 # --------- Streamlit UI ---------
-st.set_page_config(page_title="PATHMATE - Speech to Text Demo", layout="centered")
+st.set_page_config(page_title="PATHMATE - Speech to Text Demo 17:15", layout="centered")
 st.title("Pathmate Speech to Text Demo")
 st.caption("Upload your meal voice log (.mp3, .wav, .ogg, .mp4) to get a transcription.")
 
@@ -116,48 +116,100 @@ if uploaded_file:
         st.markdown("Extracted entities:")
         st.write(food_entities)
 
-    # Quantity clarification
-    st.subheader("Clarify missing quantities")
+    # Quantity + Unit Clarification
+    st.subheader("Clarify missing quantities or units")
     clarified_entities = []
     clarification_prompts = []
 
     for entity in food_entities:
-        quantity = entity.get("quantity")
         extracted = entity.get("extracted", "")
-        unit = entity.get("unit", "")
+        quantity = entity.get("quantity")
+        unit = entity.get("unit")
 
+        # Handle "a"/"an"
         if isinstance(quantity, str) and quantity.lower() in ["a", "an"]:
-            entity["quantity"] = 1
-            clarified_entities.append(entity)
-        elif not quantity or (isinstance(quantity, str) and quantity.lower() in ["some", "several", "few"]):
-            clarification = st.number_input(
-                f"How much {extracted}? (unit: {unit or 'e.g. grams, slices'})",
-                min_value=0.0, step=1.0, key=f"clarify_{extracted}"
+            quantity = 1
+
+        # Ask if quantity is "some", "few", or missing
+        if not quantity or (isinstance(quantity, str) and quantity.lower() in ["some", "several", "few"]):
+            quantity_input = st.number_input(
+                f"How much {extracted}? (unit: {unit or 'portion'})",
+                min_value=0.0,
+                step=1.0,
+                key=f"clarify_quantity_{extracted}"
             )
-            if clarification > 0:
-                entity["quantity"] = clarification
-                entity["unit"] = unit or "piece"
-                clarified_entities.append(entity)
+            if quantity_input > 0:
+                quantity = quantity_input
                 clarification_prompts.append({
                     "extracted": extracted,
                     "asked_for": "quantity",
-                    "response": clarification
+                    "response": quantity_input
                 })
-        else:
-            clarified_entities.append(entity)
 
-    # Highlighted view (before corrections)
+        # Unit fallback
+        if not unit or unit.strip() == "":
+            unit = "portion"
+
+        clarified_entities.append({
+            "extracted": extracted,
+            "quantity": quantity,
+            "unit": unit
+        })
+
+    # Show updated highlight
     st.markdown("Highlighted Transcript with Entities")
     st.markdown(highlight_transcript(transcript, clarified_entities), unsafe_allow_html=True)
 
-    # Match entities
+    # Match to DB
     with st.spinner("Matching to Swiss food database..."):
         csv_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
         food_db = load_food_database(csv_path)
-        matches = [match_entity(entity, food_db) for entity in clarified_entities]
+        initial_matches = [match_entity(entity, food_db) for entity in clarified_entities]
 
-    # Manual food correction if not matched
+    # Ask for unknown food correction
     final_matches = []
-    for match in matches:
+    for match in initial_matches:
         if not match["recognized"] or match["ID"] is None:
-            correction = st
+            correction = st.text_input(
+                f"🤔 Could not recognize food: '{match['extracted']}'. What is it?",
+                key=f"manual_match_{match['extracted']}"
+            )
+            if correction:
+                corrected = match_entity({"extracted": correction}, food_db)
+                corrected["quantity"] = match["quantity"]
+                corrected["unit"] = match["unit"]
+                final_matches.append(corrected)
+            else:
+                final_matches.append(match)
+        else:
+            final_matches.append(match)
+
+    # Show final table
+    st.subheader("Matched Results")
+    df = pd.DataFrame(final_matches)
+    st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
+
+    # Send to Sheets
+    send_to_google_sheets(
+        meal_id=f"meal_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        user_id="anon_user",
+        raw_text=transcript,
+        entities=clarified_entities,
+        matches=clean_list_for_json(final_matches),
+        prompts=clarification_prompts
+    )
+
+    # Download options
+    st.download_button(
+        "Download JSON",
+        data=json.dumps(final_matches, indent=2, default=make_json_serializable),
+        file_name="meal_log.json",
+        mime="application/json"
+    )
+
+    st.download_button(
+        "Download CSV",
+        data=df.to_csv(index=False),
+        file_name="meal_log.csv",
+        mime="text/csv"
+    )
