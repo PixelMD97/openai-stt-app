@@ -1,5 +1,6 @@
 #16:40 15.5
 
+
 import streamlit as st
 import tempfile
 from pydub import AudioSegment
@@ -29,7 +30,7 @@ def clean_list_for_json(data):
 
 # --------- Google Sheets Logger ---------
 def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts):
-    url = "https://script.google.com/macros/s/AKfycbwMRxcoQarz8GdxxDGUTBmY-jfzPqXlBRD-DfFsiDX1PiNXieNGc4nTB1_Qo-Cj9pRd/exec"  
+    url = "https://script.google.com/macros/s/YOUR_SCRIPT_URL/exec"  # <<< REPLACE ME
     payload = {
         "meal_id": meal_id,
         "user_id": user_id,
@@ -54,8 +55,6 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
             print("📬 No HTTP response received.")
 
 # --------- Highlighting ---------
-import re
-
 def highlight_transcript(text, entities):
     if not entities:
         return text
@@ -68,7 +67,7 @@ def highlight_transcript(text, entities):
         quantity = str(ent.get("quantity", "") or "").strip()
         unit = str(ent.get("unit", "") or "").strip()
 
-        # Highlight full "quantity unit" phrase
+        # Highlight full "quantity unit"
         if quantity and unit:
             pattern = rf"\b{re.escape(quantity)}\s+{re.escape(unit)}\b"
             highlighted = re.sub(pattern,
@@ -87,10 +86,10 @@ def highlight_transcript(text, entities):
             pattern = rf"\b{re.escape(food)}\b"
             highlighted = re.sub(pattern,
                                  rf'<span style="background-color:#90ee90;">\g<0></span>',
-                                 highlighted, flags=re.IGNORECASE)
+                                 highlighted,
+                                 flags=re.IGNORECASE)
 
     return highlighted
-
 
 # --------- Streamlit UI ---------
 st.set_page_config(page_title="PATHMATE - Speech to Text Demo", layout="centered")
@@ -131,9 +130,6 @@ if uploaded_file:
         st.markdown("Extracted entities:")
         st.write(food_entities)
 
-    st.markdown("Highlighted Transcript with Entities")
-    st.markdown(highlight_transcript(transcript, food_entities), unsafe_allow_html=True)
-
     # Quantity clarification
     st.subheader("Clarify missing quantities")
     clarified_entities = []
@@ -154,6 +150,7 @@ if uploaded_file:
             )
             if clarification > 0:
                 entity["quantity"] = clarification
+                entity["unit"] = unit or "piece"  # Default unit fallback
                 clarified_entities.append(entity)
                 clarification_prompts.append({
                     "extracted": extracted,
@@ -162,6 +159,10 @@ if uploaded_file:
                 })
         else:
             clarified_entities.append(entity)
+
+    # ✅ Show updated highlights
+    st.markdown("Highlighted Transcript with Entities")
+    st.markdown(highlight_transcript(transcript, clarified_entities), unsafe_allow_html=True)
 
     # Matching
     with st.spinner("Matching to Swiss food database..."):
@@ -196,3 +197,4 @@ if uploaded_file:
         file_name="meal_log.csv",
         mime="text/csv"
     )
+
