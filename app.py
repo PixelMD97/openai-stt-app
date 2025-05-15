@@ -1,4 +1,4 @@
-#16:40 15.5
+#16:50 15.5
 
 import streamlit as st
 import tempfile
@@ -14,7 +14,7 @@ from datetime import datetime
 import numpy as np
 import re
 
-# --------- Helpers ---------
+# --------- JSON helpers ---------
 def make_json_serializable(obj):
     if isinstance(obj, np.generic):
         return obj.item()
@@ -29,7 +29,7 @@ def clean_list_for_json(data):
 
 # --------- Google Sheets Logger ---------
 def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts):
-    url = "https://script.google.com/macros/s/YOUR_SCRIPT_URL/exec"  # <<< REPLACE
+    url = "https://script.google.com/macros/s/YOUR_SCRIPT_URL/exec"  # <<< Replace with your own
     payload = {
         "meal_id": meal_id,
         "user_id": user_id,
@@ -116,7 +116,7 @@ if uploaded_file:
         st.markdown("Extracted entities:")
         st.write(food_entities)
 
-    # Quantity Clarification
+    # Quantity clarification
     st.subheader("Clarify missing quantities")
     clarified_entities = []
     clarification_prompts = []
@@ -146,59 +146,18 @@ if uploaded_file:
         else:
             clarified_entities.append(entity)
 
-    # Highlight again after clarification
+    # Highlighted view (before corrections)
     st.markdown("Highlighted Transcript with Entities")
     st.markdown(highlight_transcript(transcript, clarified_entities), unsafe_allow_html=True)
 
-    # Matching
+    # Match entities
     with st.spinner("Matching to Swiss food database..."):
         csv_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
         food_db = load_food_database(csv_path)
         matches = [match_entity(entity, food_db) for entity in clarified_entities]
 
-    # Unmatched food clarification
+    # Manual food correction if not matched
     final_matches = []
     for match in matches:
         if not match["recognized"] or match["ID"] is None:
-            correction = st.text_input(
-                f"🤔 Could not recognize food: '{match['extracted']}'. Please specify:",
-                key=f"manual_match_{match['extracted']}"
-            )
-            if correction:
-                new_match = match_entity({"extracted": correction}, food_db)
-                new_match["quantity"] = match["quantity"]
-                new_match["unit"] = match["unit"]
-                final_matches.append(new_match)
-            else:
-                final_matches.append(match)
-        else:
-            final_matches.append(match)
-
-    st.subheader("Matched Results")
-    df = pd.DataFrame(final_matches)
-    st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
-
-    # Log to Google Sheets
-    send_to_google_sheets(
-        meal_id=f"meal_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-        user_id="anon_user",
-        raw_text=transcript,
-        entities=clarified_entities,
-        matches=final_matches,
-        prompts=clarification_prompts
-    )
-
-    # Download
-    st.download_button(
-        "Download JSON",
-        data=json.dumps(final_matches, indent=2, default=make_json_serializable),
-        file_name="meal_log.json",
-        mime="application/json"
-    )
-
-    st.download_button(
-        "Download CSV",
-        data=df.to_csv(index=False),
-        file_name="meal_log.csv",
-        mime="text/csv"
-    )
+            correction = st
