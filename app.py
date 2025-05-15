@@ -1,4 +1,3 @@
-
 # app.py
 
 import streamlit as st
@@ -9,8 +8,30 @@ from entity_extractor import extract_food_entities
 from swiss_food_matcher import load_food_database, match_entity
 import pandas as pd
 import os
+import requests
+import json
+from datetime import datetime
 
-st.set_page_config(page_title="OpenAI Whisper Speech to Text Demo", layout="centered")
+# --------- Google Sheets Logger ---------
+def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts):
+    url = "https://script.google.com/macros/s/AKfycbwMRxcoQarz8GdxxDGUTBmY-jfzPqXlBRD-DfFsiDX1PiNXieNGc4nTB1_Qo-Cj9pRd/exec"
+    payload = {
+        "meal_id": meal_id,
+        "user_id": user_id,
+        "raw_text": raw_text,
+        "entities": entities,
+        "matches": matches,
+        "prompts": prompts,
+    }
+
+    try:
+        response = requests.post(url, json=payload)
+        print("✅ Logged to Google Sheets:", response.text)
+    except Exception as e:
+        print("❌ Failed to log to Sheets:", e)
+
+# --------- Streamlit UI ---------
+st.set_page_config(page_title="PATHMATE - Speech to Text Demo", layout="centered")
 st.title("Pathmate Speech to Text Demo")
 st.caption("Upload your meal voice log (.mp3, .wav, .ogg, .mp4) to get a transcription.")
 
@@ -34,19 +55,22 @@ if uploaded_file:
 
     st.audio(wav_path, format="audio/wav")
 
+    # Transcription
     with st.spinner("Transcribing..."):
         transcript = transcribe_with_openai(tmp_path)
 
     st.subheader("📝 Transcription")
     st.write(transcript)
 
+    # Entity Extraction
     with st.spinner("Extracting food entities..."):
         food_entities, response_text = extract_food_entities(transcript)
-        st.subheader("🧠 Raw LLM Output")
+        st.subheader("Raw LLM Output")
         st.code(response_text)
         st.markdown("**Extracted entities:**")
         st.write(food_entities)
 
+    # Match to Swiss food DB
     with st.spinner("Matching to Swiss food database..."):
         csv_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
         food_db = load_food_database(csv_path)
@@ -55,8 +79,8 @@ if uploaded_file:
     st.markdown("**Raw matches output:**")
     st.write(matches)
 
-    # Allow user corrections if match failed
-    st.subheader("🧐 Corrections (if needed)")
+    # Correction prompt
+    st.subheader("Corrections (if needed)")
     corrections = []
     for match in matches:
         if not match["recognized"] or match["ID"] is None:
@@ -75,9 +99,20 @@ if uploaded_file:
         else:
             corrections.append(match)
 
+    # Display final table
     st.subheader("🍽️ Food Entities Extracted & Matched")
     if corrections:
         df = pd.DataFrame(corrections)
         st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
+
+        # Send to Google Sheets
+        send_to_google_sheets(
+            meal_id=f"meal_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            user_id="anon_user",
+            raw_text=transcript,
+            entities=food_entities,
+            matches=corrections,
+            prompts=[]  # Optional: extend later
+        )
     else:
         st.warning("No food entities were matched. Please try with a different input.")
