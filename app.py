@@ -1,4 +1,4 @@
-# app.py
+# app.py 11.45
 
 import streamlit as st
 import tempfile
@@ -85,7 +85,7 @@ if uploaded_file:
 
     with st.spinner("Extracting food entities..."):
         food_entities, response_text = extract_food_entities(transcript)
-        st.subheader("Raw LLM Output")
+        st.subheader(" Raw LLM Output")
         st.code(response_text)
         st.markdown("**Extracted entities:**")
         st.write(food_entities)
