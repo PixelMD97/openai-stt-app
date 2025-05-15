@@ -7,3 +7,4 @@ rapidfuzz
 sentence-transformers
 ibm-watson
 ffmpeg-python
+requests
