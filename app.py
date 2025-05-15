@@ -54,6 +54,8 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
             print("📬 No HTTP response received.")
 
 # --------- Highlighting ---------
+import re
+
 def highlight_transcript(text, entities):
     if not entities:
         return text
@@ -62,26 +64,33 @@ def highlight_transcript(text, entities):
     entities_sorted = sorted(entities, key=lambda e: -len(str(e.get("extracted", ""))))
 
     for ent in entities_sorted:
-        food = ent.get("extracted", "").strip()
-        quantity = str(ent.get("quantity", "")).strip()
-        unit = ent.get("unit", "").strip()
+        food = str(ent.get("extracted", "") or "").strip()
+        quantity = str(ent.get("quantity", "") or "").strip()
+        unit = str(ent.get("unit", "") or "").strip()
 
-        # Highlight full quantity phrases first (e.g. "200 grams")
+        # Highlight full "quantity unit" phrase
         if quantity and unit:
-            pattern = rf"\b{quantity}\s+{unit}\b"
-            highlighted = re.sub(pattern, rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted)
+            pattern = rf"\b{re.escape(quantity)}\s+{re.escape(unit)}\b"
+            highlighted = re.sub(pattern,
+                                 rf'<span style="background-color:#40e0d0;">\g<0></span>',
+                                 highlighted)
 
-        # Fallback: just highlight quantity
-        elif quantity:
-            pattern = rf"\b{quantity}\b"
-            highlighted = re.sub(pattern, rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted)
+        # Highlight just quantity
+        if quantity:
+            pattern = rf"\b{re.escape(quantity)}\b"
+            highlighted = re.sub(pattern,
+                                 rf'<span style="background-color:#40e0d0;">\g<0></span>',
+                                 highlighted)
 
-        # Highlight food name
+        # Highlight food
         if food:
             pattern = rf"\b{re.escape(food)}\b"
-            highlighted = re.sub(pattern, rf'<span style="background-color:#90ee90;">\g<0></span>', highlighted, flags=re.IGNORECASE)
+            highlighted = re.sub(pattern,
+                                 rf'<span style="background-color:#90ee90;">\g<0></span>',
+                                 highlighted, flags=re.IGNORECASE)
 
     return highlighted
+
 
 # --------- Streamlit UI ---------
 st.set_page_config(page_title="PATHMATE - Speech to Text Demo", layout="centered")
