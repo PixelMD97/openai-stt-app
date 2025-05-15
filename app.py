@@ -26,9 +26,16 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
 
     try:
         response = requests.post(url, json=payload)
+        response.raise_for_status()  # Raises error if status code is not 200
         print("✅ Logged to Google Sheets:", response.text)
     except Exception as e:
         print("❌ Failed to log to Sheets:", e)
+        print("📨 Payload was:", json.dumps(payload, indent=2))
+        if 'response' in locals():
+            print("📬 Response:", response.status_code)
+            print("📬 Response text:", response.text)
+        else:
+            print("📬 No HTTP response received.")
 
 # --------- Streamlit UI ---------
 st.set_page_config(page_title="PATHMATE - Speech to Text Demo", layout="centered")
