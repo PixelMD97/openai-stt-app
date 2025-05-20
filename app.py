@@ -11,17 +11,45 @@ import json
 from datetime import datetime
 import numpy as np
 import re
+import spacy
 
-# --------- Google Sheets Logger ---------
+# --- Load spaCy model ---
+nlp = spacy.load("en_core_web_sm")
+
+# --- Load known food words from CSV ---
+def load_known_food_words(csv_path):
+    try:
+        df = pd.read_csv(csv_path)
+        return set(df['food_name'].str.lower().str.strip())
+    except Exception as e:
+        print("⚠️ Failed to load known food words:", e)
+        return set()
+
+csv_foods_path = os.path.join(os.path.dirname(__file__), "csv_foods.csv")
+KNOWN_FOOD_WORDS = load_known_food_words(csv_foods_path)
+
+
+# --- JSON helpers ---
 def make_json_serializable(obj):
-    if isinstance(obj, np.generic):
-        return obj.item()
-    if isinstance(obj, (datetime,)):
-        return obj.isoformat()
+    if isinstance(obj, np.generic): return obj.item()
+    elif isinstance(obj, (datetime,)): return obj.isoformat()
+    elif isinstance(obj, set): return list(obj)
     return str(obj)
 
+def clean_list_for_json(data):
+    return json.loads(json.dumps(data, default=make_json_serializable))
+
+# --- Fallback food detection ---
+def find_potential_foods(transcript, known_food_words, extracted_entities):
+    doc = nlp(transcript.lower())
+    nouns_in_text = {chunk.text.strip() for chunk in doc.noun_chunks}
+    extracted = {ent["extracted"].lower() for ent in extracted_entities}
+    potential_foods = [noun for noun in nouns_in_text if noun in known_food_words and noun not in extracted]
+    return potential_foods
+
+# --- Google Sheets logging ---
 def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts):
-    url = "https://script.google.com/macros/s/AKfycbwMRxcoQarz8GdxxDGUTBmY-jfzPqXlBRD-DfFsiDX1PiNXieNGc4nTB1_Qo-Cj9pRd/exec"
+    url = "https://script.google.com/macros/s/YOUR_SCRIPT_URL/exec"  # Replace!
     payload = {
         "meal_id": meal_id,
         "user_id": user_id,
@@ -31,152 +59,178 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
         "prompts": prompts,
     }
     try:
-        cleaned = json.loads(json.dumps(payload, default=make_json_serializable))
+        cleaned = clean_list_for_json(payload)
         response = requests.post(url, json=cleaned)
         response.raise_for_status()
         print("✅ Logged to Google Sheets:", response.text)
     except Exception as e:
-        print("❌ Failed to log to Sheets:", e)
+        print("❌ Logging failed:", e)
 
-# --------- Highlighting Logic ---------
+# --- Highlighting ---
 def highlight_transcript(text, entities):
     highlighted = text
     entities_sorted = sorted(entities, key=lambda e: -len(str(e.get("extracted", ""))))
+    vague_terms = {"some", "few", "several", "a", "an"}
+
     for ent in entities_sorted:
-        food = ent.get("extracted", "").strip()
+        food = str(ent.get("extracted", "")).strip()
         quantity = str(ent.get("quantity", "")).strip()
-        unit = ent.get("unit", "").strip()
-        
-        # Highlight "40 grams", "1 tablespoon", etc.
-        if quantity and unit:
-            pattern = rf"\b{quantity}\s+{unit}\b"
-            highlighted = re.sub(pattern,
-                rf'<span style="background-color:#40e0d0;">\g<0></span>',
-                highlighted)
+        unit = str(ent.get("unit", "")).strip()
 
-        # Highlight quantity alone
-        if quantity:
-            pattern = rf"\b{quantity}\b"
-            highlighted = re.sub(pattern,
-                rf'<span style="background-color:#40e0d0;">\g<0></span>',
-                highlighted)
+        if quantity.lower() in vague_terms:
+            highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
+                                 rf'<span style="background-color:#ffff99;">\g<0></span>', highlighted, flags=re.IGNORECASE)
+        elif quantity and unit:
+            highlighted = re.sub(rf"\b{re.escape(quantity)}\s+{re.escape(unit)}\b",
+                                 rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
+        elif quantity:
+            highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
+                                 rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
 
-        # Highlight food term (green)
         if food:
-            pattern = rf"\b{re.escape(food)}\b"
-            highlighted = re.sub(pattern,
-                rf'<span style="background-color:#90ee90;">\g<0></span>',
-                highlighted,
-                flags=re.IGNORECASE)
+            highlighted = re.sub(rf"\b{re.escape(food)}\b",
+                                 rf'<span style="background-color:#90ee90;">\g<0></span>', highlighted, flags=re.IGNORECASE)
     return highlighted
 
-# --------- Streamlit UI ---------
-st.set_page_config(page_title="PATHMATE - Speech to Text Demo", layout="centered")
-st.title("Pathmate Speech to Text Demo")
+# --- Streamlit UI ---
+now = datetime.now().strftime("%Y-%m-%d %H:%M")
+st.set_page_config(page_title=f"PATHMATE - Meal Logging {now}", layout="centered")
+st.title(f"Pathmate Speech to Text Demo ({now})")
 st.caption("Upload your meal voice log (.mp3, .wav, .ogg, .mp4) to get a transcription.")
 
-uploaded_file = st.file_uploader("12:10 Drag and drop an MP3/WAV/OGG/MP4 file here", type=["mp3", "wav", "ogg", "mp4"])
+uploaded_file = st.file_uploader("Upload an audio file", type=["mp3", "wav", "ogg", "mp4"])
 
 if uploaded_file:
     with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(uploaded_file.name)[1]) as tmp_file:
         tmp_file.write(uploaded_file.read())
         tmp_path = tmp_file.name
 
-    # Convert to MP3 if needed
     if tmp_path.endswith((".ogg", ".wav", ".mp4")):
         audio = AudioSegment.from_file(tmp_path)
-        tmp_path_mp3 = tmp_path + ".converted.mp3"
-        audio.export(tmp_path_mp3, format="mp3")
-        tmp_path = tmp_path_mp3
+        tmp_path = tmp_path + ".converted.mp3"
+        audio.export(tmp_path, format="mp3")
 
-    # Convert to WAV for playback
-    audio = AudioSegment.from_file(tmp_path)
     wav_path = tmp_path.replace(".mp3", ".wav")
-    audio.export(wav_path, format="wav")
-
+    AudioSegment.from_file(tmp_path).export(wav_path, format="wav")
     st.audio(wav_path, format="audio/wav")
 
-    # Transcription
     with st.spinner("Transcribing..."):
         transcript = transcribe_with_openai(tmp_path)
 
-    st.subheader("Transcription")
-    st.markdown(highlight_transcript(transcript, []), unsafe_allow_html=True)
+    st.subheader("Transcript")
+    st.write(transcript)
 
-    # Entity Extraction
     with st.spinner("Extracting food entities..."):
-        food_entities, response_text = extract_food_entities(transcript)
+        food_entities, raw_llm = extract_food_entities(transcript)
+        st.subheader("Raw LLM Output")
+        st.code(raw_llm)
+        st.markdown("Extracted entities:")
+        st.write(food_entities)
 
-    st.subheader(" Raw LLM Output")
-    st.code(response_text)
+        # SpaCy-based fallback detection
+        missing_foods = find_potential_foods(transcript, KNOWN_FOOD_WORDS, food_entities)
+        for food in missing_foods:
+            if st.checkbox(f"Include '{food}' even though no quantity was mentioned?"):
+                food_entities.append({
+                    "extracted": food,
+                    "quantity": None,
+                    "unit": None
+                })
 
-    st.markdown("**Extracted entities:**")
-    st.write(food_entities)
+    # --- Clarification & Matching ---
+    st.subheader("Clarify quantities / units + Match foods")
 
-    st.markdown("Highlighted Transcript with Entities")
-    st.markdown(highlight_transcript(transcript, food_entities), unsafe_allow_html=True)
+    clarified_entities = []
+    clarification_prompts = []
+    matched_entities = []
 
-    # Food Matching
-    with st.spinner("Matching to Swiss food database..."):
-        csv_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
-        food_db = load_food_database(csv_path)
-        matches = [match_entity(entity, food_db) for entity in food_entities]
+    csv_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
+    food_db = load_food_database(csv_path)
 
-    st.markdown("**Raw matches output:**")
-    st.write(matches)
+    for entity in food_entities:
+        extracted = entity.get("extracted", "")
+        quantity = entity.get("quantity")
+        unit = entity.get("unit")
 
-    # Manual Corrections
-    st.subheader("Corrections (if needed)")
-    corrections = []
-    for match in matches:
-        if not match["recognized"] or match["ID"] is None:
-            corrected = st.text_input(
-                f"🤔 Could not recognize food: '{match['extracted']}'. Please specify:",
-                key=f"correction_{match['extracted']}"
+        if isinstance(quantity, str):
+            q_lower = quantity.lower()
+            if q_lower in ["a", "an", "one"]:
+                quantity = 1
+            elif q_lower in ["some", "few", "several"]:
+                quantity = None
+
+        if quantity in [None, ""]:
+            quantity = st.number_input(
+                f"How much {extracted}? (e.g. 100, 2)",
+                min_value=0.0, step=1.0,
+                key=f"q_input_{extracted}"
             )
-            if corrected:
-                corrected_entity = {"extracted": corrected}
-                corrected_match = match_entity(corrected_entity, food_db)
-                corrected_match["quantity"] = match["quantity"]
-                corrected_match["unit"] = match["unit"]
-                corrections.append(corrected_match)
+            clarification_prompts.append({
+                "extracted": extracted,
+                "asked_for": "quantity",
+                "response": quantity
+            })
+
+        if not unit or unit.strip() == "":
+            unit = "portion"
+
+        clarified = {"extracted": extracted, "quantity": quantity, "unit": unit}
+        clarified_entities.append(clarified)
+
+        match = match_entity(clarified, food_db)
+        if not match["recognized"] or match["ID"] is None:
+            correction = st.text_input(
+                f"Food '{extracted}' not recognized. What is it?",
+                key=f"match_correction_{extracted}"
+            )
+            if correction:
+                corrected = match_entity({"extracted": correction}, food_db)
+                corrected["quantity"] = quantity
+                corrected["unit"] = unit
+                matched_entities.append(corrected)
             else:
-                corrections.append(match)
+                matched_entities.append(match)
         else:
-            corrections.append(match)
+            matched_entities.append(match)
 
-    # Final Output
-    st.subheader("🍽️ Food Entities Extracted & Matched")
-    if corrections:
-        df = pd.DataFrame(corrections)
-        st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
+    # --- Results ---
+    st.subheader("Matched Results")
+    df = pd.DataFrame(matched_entities)
+    st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
 
-        # Clean data for logging/export
-        serializable_corrections = json.loads(json.dumps(corrections, default=make_json_serializable))
+    # --- Highlighted Transcript ---
+    st.subheader("Final Highlighted Transcript")
+    st.markdown(highlight_transcript(transcript, clarified_entities), unsafe_allow_html=True)
 
-        # ✅ Send to Google Sheets
-        send_to_google_sheets(
-            meal_id=f"meal_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-            user_id="anon_user",
-            raw_text=transcript,
-            entities=food_entities,
-            matches=serializable_corrections,
-            prompts=[]
-        )
+    st.markdown("""
+    <div style='padding-top: 10px; font-size: 14px;'>
+    <b>🟩 Green</b>: Food items (e.g., <i>pizza</i>)<br>
+    <b>🟦 Blue</b>: Quantity and unit (e.g., <i>3 slices</i>)<br>
+    <b>🟨 Yellow</b>: Vague/uncertain quantities (e.g., <i>some</i>, <i>a</i>, <i>few</i>)
+    </div>
+    """, unsafe_allow_html=True)
 
-        # ⬇️ Export buttons
-        st.download_button(
-            "📥 Download JSON",
-            data=json.dumps(serializable_corrections, indent=2),
-            file_name="meal_log.json",
-            mime="application/json"
-        )
+    # --- Save to Sheets ---
+    send_to_google_sheets(
+        meal_id=f"meal_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        user_id="anon_user",
+        raw_text=transcript,
+        entities=clarified_entities,
+        matches=clean_list_for_json(matched_entities),
+        prompts=clarification_prompts
+    )
 
-        st.download_button(
-            "📥 Download CSV",
-            data=df.to_csv(index=False),
-            file_name="meal_log.csv",
-            mime="text/csv"
-        )
-    else:
-        st.warning("No food entities were matched. Please try with a different input.")
+    # --- Download buttons ---
+    st.download_button(
+        "Download JSON",
+        data=json.dumps(matched_entities, indent=2, default=make_json_serializable),
+        file_name="meal_log.json",
+        mime="application/json"
+    )
+
+    st.download_button(
+        "Download CSV",
+        data=df.to_csv(index=False),
+        file_name="meal_log.csv",
+        mime="text/csv"
+    )
