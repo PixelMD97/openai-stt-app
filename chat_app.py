@@ -83,8 +83,12 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
 
 # --- App config ---
 now = datetime.now().strftime("%Y-%m-%d %H:%M")
-st.set_page_config(page_title=f"Pathmate Chat {now}", layout="centered")
+st.set_page_config(page_title=f"Pathmate Chat - {now}", layout="centered")
+
 st.title("Pathmate - Chat-Based Meal Logger")
+st.caption(f"{now}")
+
+
 
 with st.chat_message("assistant"):
     st.markdown("""
