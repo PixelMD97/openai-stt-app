@@ -61,7 +61,21 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
 
 # --- Highlighting ---
 
+from word2number import w2n
+
+def normalize_numbers(text):
+    words = text.split()
+    converted = []
+    for word in words:
+        try:
+            converted.append(str(w2n.word_to_num(word)))
+        except:
+            converted.append(word)
+    return ' '.join(converted)
+
+
 def highlight_transcript(text, entities):
+    text = normalize_numbers(text)  
     highlighted = text
     entities_sorted = sorted(entities, key=lambda e: -len(str(e.get("extracted", ""))))
     vague_terms = {"some", "few", "several", "a", "an"}
@@ -85,8 +99,6 @@ def highlight_transcript(text, entities):
             highlighted = re.sub(rf"\b{re.escape(food)}\b",
                                  rf'<span style="background-color:#90ee90;">\g<0></span>', highlighted, flags=re.IGNORECASE)
     return highlighted
-
-
 
 
 # --- Streamlit UI ---
