@@ -2,7 +2,7 @@ import streamlit as st
 from openai_stt import transcribe_with_openai
 from entity_extractor import extract_food_entities
 from swiss_food_matcher import load_food_database, match_entity
-from app import highlight_transcript, find_potential_foods_simple  # reuse
+from core import highlight_transcript, find_potential_foods_simple, make_json_serializable, clean_list_for_json
 import tempfile, os, json, pandas as pd
 from datetime import datetime
 from pydub import AudioSegment
