@@ -1,4 +1,4 @@
-import streamlit as st 
+import streamlit as st
 import os
 import tempfile
 import subprocess
@@ -9,7 +9,6 @@ import numpy as np
 import re
 from word2number import w2n
 import requests
-
 
 from openai_stt import transcribe_with_openai
 from entity_extractor import extract_food_entities
@@ -86,11 +85,8 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
 # --- App config ---
 now = datetime.now().strftime("%Y-%m-%d %H:%M")
 st.set_page_config(page_title=f"Pathmate Chat - {now}", layout="centered")
-
 st.title("Pathmate - Chat-Based Meal Logger")
 st.caption(f"{now}")
-
-
 
 with st.chat_message("assistant"):
     st.markdown("""
@@ -116,6 +112,9 @@ def process_new_transcript(transcript):
     st.session_state.chat_history.append(("user", transcript))
     with st.spinner("Extracting food items..."):
         entities, _ = extract_food_entities(transcript)
+    if not entities:
+        st.error("❌ No food or drinks found. Please try again.")
+        return
     st.session_state.pending_entities = entities
     st.session_state.clarified_entities = []
     st.session_state.matched_entities = []
@@ -130,12 +129,13 @@ def clarify_next_food():
         quantity = 1
     elif isinstance(quantity, str) and quantity.lower() in ["some", "few", "several"]:
         quantity = None
+        unit = None
 
     if not quantity:
         quantity = st.number_input(f"How much {extracted}?", min_value=0.0, key=f"q_{extracted}")
 
     if not unit or unit.strip() == "":
-        unit = "portion"
+        unit = st.text_input(f"Unit for {extracted}?", value="portion", key=f"unit_{extracted}")
 
     clarified = {"extracted": extracted, "quantity": quantity, "unit": unit}
     st.session_state.clarified_entities.append(clarified)
@@ -178,7 +178,6 @@ elif st.session_state.matched_entities:
     st.subheader("📝 Highlighted Transcript")
     st.markdown(highlight_transcript(st.session_state.transcript, st.session_state.clarified_entities), unsafe_allow_html=True)
 
-    # ✅ Google Sheets logging
     send_to_google_sheets(
         meal_id=f"meal_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         user_id="anon_user",
