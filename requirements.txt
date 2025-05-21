@@ -9,10 +9,11 @@ ibm-watson
 ffmpeg-python
 requests
 
-# For spaCy CPU-compatible install
-cython
-spacy==3.7.2
+cython==0.29.36
+
+# Stable spaCy and thinc combo
+spacy==3.5.3
 thinc==8.1.10
 
-# Download model (works reliably)
-https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
+# English model
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.5.0/en_core_web_sm-3.5.0-py3-none-any.whl
