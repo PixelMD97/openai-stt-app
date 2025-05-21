@@ -1,3 +1,4 @@
+
 import streamlit as st
 import tempfile
 from pydub import AudioSegment
@@ -11,6 +12,7 @@ import json
 from datetime import datetime
 import numpy as np
 import re
+from word2number import w2n
 
 # --- Load known food words from CSV ---
 def load_known_food_words(csv_path):
@@ -42,7 +44,7 @@ def find_potential_foods_simple(transcript, known_food_words, extracted_entities
 
 # --- Google Sheets logging ---
 def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts):
-    url = "https://script.google.com/macros/s/YOUR_SCRIPT_URL/exec"  # Replace!
+    url = "https://script.google.com/macros/s/AKfycbyUBw50RjB_I-ak1ZrGPU3aGoOC9WGOgVa6l4g4DnNjGnb11FVV9X5QjCiOzpuL6a8zLg/exec"
     payload = {
         "meal_id": meal_id,
         "user_id": user_id,
@@ -51,18 +53,12 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
         "matches": matches,
         "prompts": prompts,
     }
-    try:
-        cleaned = clean_list_for_json(payload)
-        response = requests.post(url, json=cleaned)
-        response.raise_for_status()
-        print("✅ Logged to Google Sheets:", response.text)
-    except Exception as e:
-        print("❌ Logging failed:", e)
+    cleaned = clean_list_for_json(payload)
+    response = requests.post(url, json=cleaned)
+    response.raise_for_status()
+    print("✅ Logged to Google Sheets:", response.text)
 
 # --- Highlighting ---
-
-from word2number import w2n
-
 def normalize_numbers(text):
     words = text.split()
     converted = []
@@ -73,9 +69,8 @@ def normalize_numbers(text):
             converted.append(word)
     return ' '.join(converted)
 
-
 def highlight_transcript(text, entities):
-    text = normalize_numbers(text)  
+    text = normalize_numbers(text)
     highlighted = text
     entities_sorted = sorted(entities, key=lambda e: -len(str(e.get("extracted", ""))))
     vague_terms = {"some", "few", "several", "a", "an"}
@@ -88,22 +83,18 @@ def highlight_transcript(text, entities):
         if quantity.lower() in vague_terms:
             highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
                                  rf'<span style="background-color:#ffff99;">\g<0></span>', highlighted, flags=re.IGNORECASE)
-        
         elif quantity and unit:
             highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
                          rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
             highlighted = re.sub(rf"\b{re.escape(unit)}\b",
                          rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
-
         elif quantity:
             highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
                                  rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
-
         if food:
             highlighted = re.sub(rf"\b{re.escape(food)}\b",
                                  rf'<span style="background-color:#90ee90;">\g<0></span>', highlighted, flags=re.IGNORECASE)
     return highlighted
-
 
 # --- Streamlit UI ---
 now = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -140,7 +131,7 @@ if uploaded_file:
         st.markdown("Extracted entities:")
         st.write(food_entities)
 
-        # CSV-based fallback detection
+        # Fallback detection
         missing_foods = find_potential_foods_simple(transcript, KNOWN_FOOD_WORDS, food_entities)
         for food in missing_foods:
             if st.checkbox(f"Include '{food}' even though no quantity was mentioned?"):
@@ -150,9 +141,7 @@ if uploaded_file:
                     "unit": None
                 })
 
-    # --- Clarification & Matching ---
     st.subheader("Clarify quantities / units + Match foods")
-
     clarified_entities = []
     clarification_prompts = []
     matched_entities = []
@@ -173,11 +162,7 @@ if uploaded_file:
                 quantity = None
 
         if quantity in [None, ""]:
-            quantity = st.number_input(
-                f"How much {extracted}? (e.g. 100, 2)",
-                min_value=0.0, step=1.0,
-                key=f"q_input_{extracted}"
-            )
+            quantity = st.number_input(f"How much {extracted}? (e.g. 100, 2)", min_value=0.0, step=1.0, key=f"q_input_{extracted}")
             clarification_prompts.append({
                 "extracted": extracted,
                 "asked_for": "quantity",
@@ -192,10 +177,7 @@ if uploaded_file:
 
         match = match_entity(clarified, food_db)
         if not match["recognized"] or match["ID"] is None:
-            correction = st.text_input(
-                f"Food '{extracted}' not recognized. What is it?",
-                key=f"match_correction_{extracted}"
-            )
+            correction = st.text_input(f"Food '{extracted}' not recognized. What is it?", key=f"match_correction_{extracted}")
             if correction:
                 corrected = match_entity({"extracted": correction}, food_db)
                 corrected["quantity"] = quantity
@@ -206,38 +188,30 @@ if uploaded_file:
         else:
             matched_entities.append(match)
 
-    # --- Results ---
     st.subheader("Matched Results")
     df = pd.DataFrame(matched_entities)
     st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
 
-    # --- Highlighted Transcript ---
     st.subheader("Final Highlighted Transcript")
     normalized_transcript = normalize_numbers(transcript)
     st.markdown(highlight_transcript(normalized_transcript, clarified_entities), unsafe_allow_html=True)
 
+    # --- Save to Sheets with feedback ---
+    try:
+        send_to_google_sheets(
+            meal_id=f"meal_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            user_id="anon_user",
+            raw_text=transcript,
+            entities=clarified_entities,
+            matches=clean_list_for_json(matched_entities),
+            prompts=clarification_prompts
+        )
+        st.success("✅ Logged to Google Sheets!")
+    except Exception as e:
+        st.error("❌ Logging to Google Sheets failed.")
+        st.exception(e)
 
-    # --- Save to Sheets ---
-    send_to_google_sheets(
-        meal_id=f"meal_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-        user_id="anon_user",
-        raw_text=transcript,
-        entities=clarified_entities,
-        matches=clean_list_for_json(matched_entities),
-        prompts=clarification_prompts
-    )
-
-    # --- Download buttons ---
-    st.download_button(
-        "Download JSON",
-        data=json.dumps(matched_entities, indent=2, default=make_json_serializable),
-        file_name="meal_log.json",
-        mime="application/json"
-    )
-
-    st.download_button(
-        "Download CSV",
-        data=df.to_csv(index=False),
-        file_name="meal_log.csv",
-        mime="text/csv"
-    )
+    st.download_button("Download JSON", data=json.dumps(matched_entities, indent=2, default=make_json_serializable),
+                       file_name="meal_log.json", mime="application/json")
+    st.download_button("Download CSV", data=df.to_csv(index=False),
+                       file_name="meal_log.csv", mime="text/csv")
