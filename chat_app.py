@@ -72,7 +72,8 @@ def convert_to_mp3(input_path, output_path):
         raise e
 
 # --- App Config
-st.set_page_config(page_title="Pathmate Chat Logger", layout="centered")
+now = datetime.now().strftime("%Y-%m-%d %H:%M")
+st.set_page_config(page_title="Pathmate Chat {now}", layout="centered")
 st.title("🧠 Pathmate - Chat-Based Meal Logger")
 
 with st.chat_message("assistant"):
