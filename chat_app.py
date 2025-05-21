@@ -88,43 +88,49 @@ st.set_page_config(page_title=f"Pathmate Chat - {now}", layout="centered")
 st.title("Pathmate - Chat-Based Meal Logger")
 st.caption(f"{now}")
 
-with st.chat_message("assistant"):
-    st.markdown("""
-    Hello! This is a **prototype demo built at FHNW in collaboration with Pathmate**.  
-    The goal is to illustrate how voice or chat input can be turned into **structured meal logging** using AI.  
-    👉 You can tell me what you ate today, or upload a voice recording — and I’ll extract food items, quantities, and units for you.
-    """)
+st.markdown("""
+Hello! This is a **prototype demo built at FHNW in collaboration with Pathmate**.  
+The goal is to illustrate how voice or chat input can be turned into **structured meal logging** using AI.  
+👉 You can tell me what you ate today, or upload a voice recording — and I’ll extract food items, quantities, and units for you.
+""")
 
 # --- Load Swiss DB ---
 db_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
 FOOD_DB = load_food_database(db_path)
 
 # --- Session state ---
-for key in ["chat_history", "transcript", "pending_entities", "clarified_entities", "matched_entities"]:
+for key in ["transcript", "entities", "clarified_entities", "matched_entities"]:
     if key not in st.session_state:
         st.session_state[key] = []
 
-# --- Input method ---
+# --- Input ---
 input_mode = st.radio("Choose input method:", ["💬 Chat", "🎤 Voice"], horizontal=True)
+if input_mode == "💬 Chat":
+    user_input = st.text_input("What did you eat today?")
+    if user_input:
+        st.session_state.transcript = user_input
+        with st.spinner("Extracting food items..."):
+            st.session_state.entities, _ = extract_food_entities(user_input)
+        st.session_state.clarified_entities = []
+        st.session_state.matched_entities = []
 
-def process_new_transcript(transcript):
-    st.session_state.transcript = transcript
-    st.session_state.chat_history.append(("user", transcript))
-    with st.spinner("Extracting food items..."):
-        entities, _ = extract_food_entities(transcript)
-    if not entities:
-        st.error("❌ No food or drinks found. Please try again.")
-        return
-    st.session_state.pending_entities = entities
-    st.session_state.clarified_entities = []
-    st.session_state.matched_entities = []
+elif input_mode == "🎤 Voice":
+    voice_file = st.file_uploader("Upload your voice log", type=["mp3", "wav", "ogg", "mp4"])
+    if voice_file:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(voice_file.name)[1]) as tmp:
+            tmp.write(voice_file.read())
+            tmp_path = tmp.name
+        converted_path = tmp_path + ".converted.mp3"
+        convert_to_mp3(tmp_path, converted_path)
+        with st.spinner("Transcribing..."):
+            transcript = transcribe_with_openai(converted_path)
+        st.session_state.transcript = transcript
+        st.session_state.entities, _ = extract_food_entities(transcript)
+        st.session_state.clarified_entities = []
+        st.session_state.matched_entities = []
 
-def clarify_next_food():
-    if "clarification_in_progress" not in st.session_state:
-        st.session_state.clarification_in_progress = True
-        st.session_state.current_entity = st.session_state.pending_entities.pop(0)
-
-    entity = st.session_state.current_entity
+# --- Clarify and Match ---
+for entity in st.session_state.entities[len(st.session_state.clarified_entities):]:
     extracted = entity["extracted"]
     quantity = entity.get("quantity")
     unit = entity.get("unit")
@@ -135,50 +141,24 @@ def clarify_next_food():
         quantity = None
         unit = None
 
-    quantity = st.number_input(f"How much {extracted}?", min_value=0.0, key=f"q_{extracted}")
-    unit = st.text_input(f"Unit for {extracted}?", value="portion", key=f"unit_{extracted}")
-    confirm = st.button(f"Confirm {extracted}", key=f"confirm_{extracted}")
+    if not quantity or quantity == 0:
+        quantity = st.number_input(f"How much {extracted}?", min_value=0.0, key=f"q_{extracted}")
+    if not unit or unit.strip() == "":
+        unit = st.text_input(f"Unit for {extracted}?", value="portion", key=f"unit_{extracted}")
 
-    if confirm:
-        clarified = {"extracted": extracted, "quantity": quantity, "unit": unit}
-        st.session_state.clarified_entities.append(clarified)
+    clarified = {"extracted": extracted, "quantity": quantity, "unit": unit}
+    st.session_state.clarified_entities.append(clarified)
 
-        match = match_entity(clarified, FOOD_DB)
-        if match["score"] < 0.7 or not match["recognized"]:
-            correction = st.text_input(f"'{extracted}' not recognized. What did you mean?", key=f"corr_{extracted}")
-            if correction:
-                match = match_entity({"extracted": correction, "quantity": quantity, "unit": unit}, FOOD_DB)
+    match = match_entity(clarified, FOOD_DB)
+    if match["score"] < 0.7 or not match["recognized"]:
+        correction = st.text_input(f"'{extracted}' not recognized. What did you mean?", key=f"corr_{extracted}")
+        if correction:
+            match = match_entity({"extracted": correction, "quantity": quantity, "unit": unit}, FOOD_DB)
 
-        st.session_state.matched_entities.append(match)
-        del st.session_state["clarification_in_progress"]
-        del st.session_state["current_entity"]
-        st.rerun()
+    st.session_state.matched_entities.append(match)
 
-
-
-
-# --- Handle input
-if input_mode == "💬 Chat":
-    user_message = st.chat_input("What did you eat today?")
-    if user_message:
-        process_new_transcript(user_message)
-
-elif input_mode == "🎤 Voice":
-    voice_file = st.file_uploader("Upload your voice log", type=["mp3", "wav", "ogg", "mp4"])
-    if voice_file:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(voice_file.name)[1]) as tmp:
-            tmp.write(voice_file.read())
-            tmp_path = tmp.name
-        converted_path = tmp_path + ".converted.mp3"
-        convert_to_mp3(tmp_path, converted_path)
-        with st.spinner("Transcribing audio..."):
-            transcript = transcribe_with_openai(converted_path)
-        process_new_transcript(transcript)
-
-# --- Clarification or Results
-if st.session_state.pending_entities:
-    clarify_next_food()
-elif st.session_state.matched_entities:
+# --- Output ---
+if st.session_state.matched_entities:
     df = pd.DataFrame(st.session_state.matched_entities)
     st.subheader("📋 Matched Table")
     st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
@@ -196,16 +176,10 @@ elif st.session_state.matched_entities:
     )
 
     st.success("✅ Thank you for using the Pathmate Chat-Based Meal Logger!")
-
-    st.download_button("📥 Download JSON",
-                       data=json.dumps(clean_list_for_json(st.session_state.matched_entities), indent=2),
+    st.download_button("📥 Download JSON", data=json.dumps(clean_list_for_json(st.session_state.matched_entities), indent=2),
                        file_name="meal_log.json", mime="application/json")
-
-    st.download_button("📥 Download CSV",
-                       data=df.to_csv(index=False), file_name="meal_log.csv", mime="text/csv")
+    st.download_button("📥 Download CSV", data=df.to_csv(index=False), file_name="meal_log.csv", mime="text/csv")
 
 # --- Footer
-st.markdown("""
----
-⚠️ *Note: This is an early demo, not a medical device. Results may be imperfect and are meant for research/demo purposes only.*
-""", unsafe_allow_html=True)
+st.markdown("---")
+st.caption("⚠️ This is an early prototype. Not a medical device. Use for demonstration/research purposes only.")
