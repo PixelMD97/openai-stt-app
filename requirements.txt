@@ -9,3 +9,4 @@ requests
 word2number
 pydub
 ffmpeg-python
+streamlit-audio-recorder
