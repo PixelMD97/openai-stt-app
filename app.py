@@ -88,9 +88,13 @@ def highlight_transcript(text, entities):
         if quantity.lower() in vague_terms:
             highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
                                  rf'<span style="background-color:#ffff99;">\g<0></span>', highlighted, flags=re.IGNORECASE)
+        
         elif quantity and unit:
-            highlighted = re.sub(rf"\b{re.escape(quantity)}\s+{re.escape(unit)}\b",
-                                 rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
+            highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
+                         rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
+            highlighted = re.sub(rf"\b{re.escape(unit)}\b",
+                         rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
+
         elif quantity:
             highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
                                  rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
