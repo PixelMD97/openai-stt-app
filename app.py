@@ -60,6 +60,7 @@ def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts
         print("❌ Logging failed:", e)
 
 # --- Highlighting ---
+
 def highlight_transcript(text, entities):
     highlighted = text
     entities_sorted = sorted(entities, key=lambda e: -len(str(e.get("extracted", ""))))
@@ -71,19 +72,22 @@ def highlight_transcript(text, entities):
         unit = str(ent.get("unit", "")).strip()
 
         if quantity.lower() in vague_terms:
-            highlighted = re.sub(rf"\\b{re.escape(quantity)}\\b",
+            highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
                                  rf'<span style="background-color:#ffff99;">\g<0></span>', highlighted, flags=re.IGNORECASE)
         elif quantity and unit:
-            highlighted = re.sub(rf"\\b{re.escape(quantity)}\\s+{re.escape(unit)}\\b",
+            highlighted = re.sub(rf"\b{re.escape(quantity)}\s+{re.escape(unit)}\b",
                                  rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
         elif quantity:
-            highlighted = re.sub(rf"\\b{re.escape(quantity)}\\b",
+            highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
                                  rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
 
         if food:
-            highlighted = re.sub(rf"\\b{re.escape(food)}\\b",
+            highlighted = re.sub(rf"\b{re.escape(food)}\b",
                                  rf'<span style="background-color:#90ee90;">\g<0></span>', highlighted, flags=re.IGNORECASE)
     return highlighted
+
+
+
 
 # --- Streamlit UI ---
 now = datetime.now().strftime("%Y-%m-%d %H:%M")
