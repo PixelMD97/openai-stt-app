@@ -73,8 +73,8 @@ st.title("🧠 Pathmate - Chat-Based Meal Logger")
 
 with st.chat_message("assistant"):
     st.markdown("""
-    👋 Hello! This is a **prototype demo built at FHNW in collaboration with Pathmate**.  
-    🧠 The goal is to illustrate how voice or chat input can be turned into **structured meal logging** using AI.  
+    Hello! This is a **prototype demo built at FHNW in collaboration with Pathmate**.  
+    The goal is to illustrate how voice or chat input can be turned into **structured meal logging** using AI.  
     👉 You can tell me what you ate today, or upload a voice recording — and I’ll extract food items, quantities, and units for you.
     """)
 
