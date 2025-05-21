@@ -11,10 +11,6 @@ import json
 from datetime import datetime
 import numpy as np
 import re
-import spacy
-
-# --- Load spaCy model ---
-nlp = spacy.load("en_core_web_sm")
 
 # --- Load known food words from CSV ---
 def load_known_food_words(csv_path):
@@ -28,7 +24,6 @@ def load_known_food_words(csv_path):
 csv_foods_path = os.path.join(os.path.dirname(__file__), "csv_foods.csv")
 KNOWN_FOOD_WORDS = load_known_food_words(csv_foods_path)
 
-
 # --- JSON helpers ---
 def make_json_serializable(obj):
     if isinstance(obj, np.generic): return obj.item()
@@ -40,12 +35,10 @@ def clean_list_for_json(data):
     return json.loads(json.dumps(data, default=make_json_serializable))
 
 # --- Fallback food detection ---
-def find_potential_foods(transcript, known_food_words, extracted_entities):
-    doc = nlp(transcript.lower())
-    nouns_in_text = {chunk.text.strip() for chunk in doc.noun_chunks}
+def find_potential_foods_simple(transcript, known_food_words, extracted_entities):
+    transcript_words = set(re.findall(r'\b\w+\b', transcript.lower()))
     extracted = {ent["extracted"].lower() for ent in extracted_entities}
-    potential_foods = [noun for noun in nouns_in_text if noun in known_food_words and noun not in extracted]
-    return potential_foods
+    return [word for word in transcript_words if word in known_food_words and word not in extracted]
 
 # --- Google Sheets logging ---
 def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts):
@@ -78,17 +71,17 @@ def highlight_transcript(text, entities):
         unit = str(ent.get("unit", "")).strip()
 
         if quantity.lower() in vague_terms:
-            highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
+            highlighted = re.sub(rf"\\b{re.escape(quantity)}\\b",
                                  rf'<span style="background-color:#ffff99;">\g<0></span>', highlighted, flags=re.IGNORECASE)
         elif quantity and unit:
-            highlighted = re.sub(rf"\b{re.escape(quantity)}\s+{re.escape(unit)}\b",
+            highlighted = re.sub(rf"\\b{re.escape(quantity)}\\s+{re.escape(unit)}\\b",
                                  rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
         elif quantity:
-            highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
+            highlighted = re.sub(rf"\\b{re.escape(quantity)}\\b",
                                  rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
 
         if food:
-            highlighted = re.sub(rf"\b{re.escape(food)}\b",
+            highlighted = re.sub(rf"\\b{re.escape(food)}\\b",
                                  rf'<span style="background-color:#90ee90;">\g<0></span>', highlighted, flags=re.IGNORECASE)
     return highlighted
 
@@ -127,8 +120,8 @@ if uploaded_file:
         st.markdown("Extracted entities:")
         st.write(food_entities)
 
-        # SpaCy-based fallback detection
-        missing_foods = find_potential_foods(transcript, KNOWN_FOOD_WORDS, food_entities)
+        # CSV-based fallback detection
+        missing_foods = find_potential_foods_simple(transcript, KNOWN_FOOD_WORDS, food_entities)
         for food in missing_foods:
             if st.checkbox(f"Include '{food}' even though no quantity was mentioned?"):
                 food_entities.append({
@@ -205,7 +198,7 @@ if uploaded_file:
     st.markdown("""
     <div style='padding-top: 10px; font-size: 14px;'>
     <b>🟩 Green</b>: Food items (e.g., <i>pizza</i>)<br>
-    <b>🟦 Blue</b>: Quantity and unit (e.g., <i>3 slices</i>)<br>
+    <b>🗭 Blue</b>: Quantity and unit (e.g., <i>3 slices</i>)<br>
     <b>🟨 Yellow</b>: Vague/uncertain quantities (e.g., <i>some</i>, <i>a</i>, <i>few</i>)
     </div>
     """, unsafe_allow_html=True)
