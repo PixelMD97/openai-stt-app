@@ -8,6 +8,8 @@ from datetime import datetime
 import numpy as np
 import re
 from word2number import w2n
+import requests
+
 
 from openai_stt import transcribe_with_openai
 from entity_extractor import extract_food_entities
