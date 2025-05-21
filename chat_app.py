@@ -1,4 +1,3 @@
-
 import streamlit as st
 import os
 import tempfile
@@ -38,22 +37,22 @@ def highlight_transcript(text, entities):
 
         if quantity.lower() in vague_terms:
             highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
-                                 rf'<span style="background-color:#ffff99;">\g<0></span>', highlighted, flags=re.IGNORECASE)
+                                 r'<span style="background-color:#ffff99;">\g<0></span>', highlighted, flags=re.IGNORECASE)
         elif quantity and unit:
             highlighted = re.sub(rf"\b{re.escape(quantity)}\s+{re.escape(unit)}\b",
-                                 rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
+                                 r'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
         elif quantity:
             highlighted = re.sub(rf"\b{re.escape(quantity)}\b",
-                                 rf'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
+                                 r'<span style="background-color:#40e0d0;">\g<0></span>', highlighted, flags=re.IGNORECASE)
 
         if food:
             highlighted = re.sub(rf"\b{re.escape(food)}\b",
-                                 rf'<span style="background-color:#90ee90;">\g<0></span>', highlighted, flags=re.IGNORECASE)
+                                 r'<span style="background-color:#90ee90;">\g<0></span>', highlighted, flags=re.IGNORECASE)
     return highlighted
 
 def make_json_serializable(obj):
     if isinstance(obj, np.generic): return obj.item()
-    elif isinstance(obj, (datetime,)): return obj.isoformat()
+    elif isinstance(obj, datetime): return obj.isoformat()
     elif isinstance(obj, set): return list(obj)
     return str(obj)
 
@@ -61,13 +60,28 @@ def clean_list_for_json(data):
     return json.loads(json.dumps(data, default=make_json_serializable))
 
 def convert_to_mp3(input_path, output_path):
-    try:
-        subprocess.run(["ffmpeg", "-y", "-i", input_path, output_path], check=True)
-    except subprocess.CalledProcessError:
-        st.error("Audio conversion failed.")
-        raise
+    subprocess.run(["ffmpeg", "-y", "-i", input_path, output_path], check=True)
 
-# --- UI config ---
+def send_to_google_sheets(meal_id, user_id, raw_text, entities, matches, prompts):
+    url = "https://script.google.com/macros/s/AKfycbwxZT_5PtOTEZpYbOsNINwDUjwHOAw7Nzm21-UfrDZsBsuojWl48wXKO1-Xvrlx_XQ7zA/exec"
+    payload = {
+        "meal_id": meal_id,
+        "user_id": user_id,
+        "raw_text": raw_text,
+        "entities": entities,
+        "matches": matches,
+        "prompts": prompts,
+    }
+    try:
+        cleaned = clean_list_for_json(payload)
+        response = requests.post(url, json=cleaned)
+        response.raise_for_status()
+        st.success("✅ Logged to Google Sheets!")
+    except Exception as e:
+        st.error("❌ Google Sheets logging failed.")
+        st.exception(e)
+
+# --- App config ---
 now = datetime.now().strftime("%Y-%m-%d %H:%M")
 st.set_page_config(page_title=f"Pathmate Chat {now}", layout="centered")
 st.title("Pathmate - Chat-Based Meal Logger")
@@ -79,7 +93,7 @@ with st.chat_message("assistant"):
     👉 You can tell me what you ate today, or upload a voice recording — and I’ll extract food items, quantities, and units for you.
     """)
 
-# --- Load Swiss food DB only ---
+# --- Load Swiss DB ---
 db_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
 FOOD_DB = load_food_database(db_path)
 
@@ -147,7 +161,7 @@ elif input_mode == "🎤 Voice":
             transcript = transcribe_with_openai(converted_path)
         process_new_transcript(transcript)
 
-# --- Main logic: clarify next or show result
+# --- Clarification or Results
 if st.session_state.pending_entities:
     clarify_next_food()
 elif st.session_state.matched_entities:
@@ -158,13 +172,26 @@ elif st.session_state.matched_entities:
     st.subheader("📝 Highlighted Transcript")
     st.markdown(highlight_transcript(st.session_state.transcript, st.session_state.clarified_entities), unsafe_allow_html=True)
 
+    # ✅ Google Sheets logging
+    send_to_google_sheets(
+        meal_id=f"meal_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        user_id="anon_user",
+        raw_text=st.session_state.transcript,
+        entities=st.session_state.clarified_entities,
+        matches=clean_list_for_json(st.session_state.matched_entities),
+        prompts=[],
+    )
+
     st.success("✅ Thank you for using the Pathmate Chat-Based Meal Logger!")
 
-    st.download_button("📥 Download JSON", json.dumps(clean_list_for_json(st.session_state.matched_entities), indent=2),
+    st.download_button("📥 Download JSON",
+                       data=json.dumps(clean_list_for_json(st.session_state.matched_entities), indent=2),
                        file_name="meal_log.json", mime="application/json")
-    st.download_button("📥 Download CSV", df.to_csv(index=False), file_name="meal_log.csv", mime="text/csv")
 
-# --- Footer note ---
+    st.download_button("📥 Download CSV",
+                       data=df.to_csv(index=False), file_name="meal_log.csv", mime="text/csv")
+
+# --- Footer
 st.markdown("""
 ---
 ⚠️ *Note: This is an early demo, not a medical device. Results may be imperfect and are meant for research/demo purposes only.*
