@@ -74,17 +74,15 @@ def convert_to_mp3(input_path, output_path):
 # --- App Config
 now = datetime.now().strftime("%Y-%m-%d %H:%M")
 st.set_page_config(page_title="Pathmate Chat {now}", layout="centered")
-st.title("🧠 Pathmate - Chat-Based Meal Logger")
+st.title("Pathmate - Chat-Based Meal Logger")
 
 with st.chat_message("assistant"):
     st.markdown("""
-    👋 Hello! This is a **prototype demo built at FHNW for Pathmate Technologies**.
+    Hello! This is a **prototype demo built at FHNW in collaboration with Pathmate**. The goal is to illustrate how voice or chat input can be turned into **structured meal logging** using AI.
 
-    🧠 The goal is to illustrate how voice or chat input can be turned into **structured meal logging** using AI.
+    👉 You can tell me what you ate today, or upload a voice recording — and I’ll extract food items, quantities, and units for you. 
 
-    👉 You can tell me what you ate today, or upload a voice recording — and I’ll extract food items, quantities, and units for you.
-
-    ⚠️ This is an early demo, not a medical device. Results may be imperfect and are meant for research/demo purposes only.
+    note: This is an early demo, not a medical device. Results may be imperfect and are meant for research/demo purposes only.
     """)
 
 # --- Load food database
