@@ -209,7 +209,10 @@ if uploaded_file:
 
     # --- Highlighted Transcript ---
     st.subheader("Final Highlighted Transcript")
-    st.markdown(highlight_transcript(transcript, clarified_entities), unsafe_allow_html=True)
+    normalized_transcript = normalize_numbers(transcript)
+    st.markdown(highlight_transcript(normalized_transcript, clarified_entities), unsafe_allow_html=True)
+
+
 
     st.markdown("""
     <div style='padding-top: 10px; font-size: 14px;'>
