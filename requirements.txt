@@ -1,11 +1,11 @@
 streamlit
 openai
-pydub
 pandas
 python-dotenv
 rapidfuzz
 sentence-transformers
 ibm-watson
-ffmpeg-python
 requests
 word2number
+pydub
+ffmpeg-python
