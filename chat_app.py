@@ -29,7 +29,7 @@ def highlight_transcript(text, entities):
     text = normalize_numbers(text)
     highlighted = text
     entities_sorted = sorted(entities, key=lambda e: -len(str(e.get("extracted", ""))))
-    vague_terms = {"some", "few", "several", "a", "an"}
+    vague_terms = {"some", "few", "several"}
 
     for ent in entities_sorted:
         food = str(ent.get("extracted", "")).strip()
@@ -120,10 +120,14 @@ def process_new_transcript(transcript):
     st.session_state.matched_entities = []
 
 def clarify_next_food():
-    next_entity = st.session_state.pending_entities.pop(0)
-    extracted = next_entity["extracted"]
-    quantity = next_entity.get("quantity")
-    unit = next_entity.get("unit")
+    if "clarification_in_progress" not in st.session_state:
+        st.session_state.clarification_in_progress = True
+        st.session_state.current_entity = st.session_state.pending_entities.pop(0)
+
+    entity = st.session_state.current_entity
+    extracted = entity["extracted"]
+    quantity = entity.get("quantity")
+    unit = entity.get("unit")
 
     if isinstance(quantity, str) and quantity.lower() in ["a", "an", "one"]:
         quantity = 1
@@ -131,23 +135,27 @@ def clarify_next_food():
         quantity = None
         unit = None
 
-    if not quantity:
-        quantity = st.number_input(f"How much {extracted}?", min_value=0.0, key=f"q_{extracted}")
+    quantity = st.number_input(f"How much {extracted}?", min_value=0.0, key=f"q_{extracted}")
+    unit = st.text_input(f"Unit for {extracted}?", value="portion", key=f"unit_{extracted}")
+    confirm = st.button(f"Confirm {extracted}", key=f"confirm_{extracted}")
 
-    if not unit or unit.strip() == "":
-        unit = st.text_input(f"Unit for {extracted}?", value="portion", key=f"unit_{extracted}")
+    if confirm:
+        clarified = {"extracted": extracted, "quantity": quantity, "unit": unit}
+        st.session_state.clarified_entities.append(clarified)
 
-    clarified = {"extracted": extracted, "quantity": quantity, "unit": unit}
-    st.session_state.clarified_entities.append(clarified)
+        match = match_entity(clarified, FOOD_DB)
+        if match["score"] < 0.7 or not match["recognized"]:
+            correction = st.text_input(f"'{extracted}' not recognized. What did you mean?", key=f"corr_{extracted}")
+            if correction:
+                match = match_entity({"extracted": correction, "quantity": quantity, "unit": unit}, FOOD_DB)
 
-    match = match_entity(clarified, FOOD_DB)
-    if match["score"] < 0.7 or not match["recognized"]:
-        correction = st.text_input(f"'{extracted}' not recognized. What did you mean?", key=f"corr_{extracted}")
-        if correction:
-            match = match_entity({"extracted": correction, "quantity": quantity, "unit": unit}, FOOD_DB)
+        st.session_state.matched_entities.append(match)
+        del st.session_state["clarification_in_progress"]
+        del st.session_state["current_entity"]
+        st.rerun()
 
-    st.session_state.matched_entities.append(match)
-    st.rerun()
+
+
 
 # --- Handle input
 if input_mode == "💬 Chat":
