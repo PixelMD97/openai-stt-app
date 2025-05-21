@@ -13,7 +13,7 @@ from openai_stt import transcribe_with_openai
 from entity_extractor import extract_food_entities
 from swiss_food_matcher import load_food_database, match_entity
 
-# --- Helper functions (no external core.py)
+# --- Inline helpers
 def normalize_numbers(text):
     words = text.split()
     converted = []
@@ -59,11 +59,6 @@ def make_json_serializable(obj):
 def clean_list_for_json(data):
     return json.loads(json.dumps(data, default=make_json_serializable))
 
-def find_potential_foods_simple(transcript, known_food_words, extracted_entities):
-    transcript_words = set(re.findall(r'\b\w+\b', transcript.lower()))
-    extracted = {ent["extracted"].lower() for ent in extracted_entities}
-    return [word for word in transcript_words if word in known_food_words and word not in extracted]
-
 def convert_to_mp3(input_path, output_path):
     try:
         subprocess.run(["ffmpeg", "-y", "-i", input_path, output_path], check=True)
@@ -71,33 +66,33 @@ def convert_to_mp3(input_path, output_path):
         st.error("Audio conversion failed.")
         raise e
 
-# --- App Config
-now = datetime.now().strftime("%Y-%m-%d %H:%M")
-st.set_page_config(page_title="Pathmate Chat {now}", layout="centered")
-st.title("Pathmate - Chat-Based Meal Logger")
+# --- UI config
+st.set_page_config(page_title="Pathmate Chat Logger", layout="centered")
+st.title("🧠 Pathmate - Chat-Based Meal Logger")
 
 with st.chat_message("assistant"):
     st.markdown("""
-    Hello! This is a **prototype demo built at FHNW in collaboration with Pathmate**. The goal is to illustrate how voice or chat input can be turned into **structured meal logging** using AI.
+    👋 Hello! This is a **prototype demo built at FHNW in collaboration with Pathmate**.
 
-    👉 You can tell me what you ate today, or upload a voice recording — and I’ll extract food items, quantities, and units for you. 
+    🧠 The goal is to illustrate how voice or chat input can be turned into **structured meal logging** using AI.
 
-    note: This is an early demo, not a medical device. Results may be imperfect and are meant for research/demo purposes only.
+    👉 You can tell me what you ate today, or upload a voice recording — and I’ll extract food items, quantities, and units for you.
+
+    ⚠️ *Note: This is an early demo, not a medical device. Results may be imperfect and are meant for research/demo purposes only.*
     """)
 
-# --- Load food database
-csv_foods_path = os.path.join(os.path.dirname(__file__), "csv_foods.csv")
+# --- Load food database (Swiss only)
 csv_db_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
-KNOWN_FOOD_WORDS = set(pd.read_csv(csv_foods_path)['food_name'].str.lower().str.strip())
 FOOD_DB = load_food_database(csv_db_path)
 
+# --- Session state
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
 if "last_transcript" not in st.session_state:
     st.session_state.last_transcript = ""
 
-# --- Input mode
+# --- Input method
 input_mode = st.radio("Choose input method:", ["💬 Chat", "🎤 Voice"], horizontal=True)
 
 def handle_transcript(transcript):
@@ -107,11 +102,6 @@ def handle_transcript(transcript):
 
     with st.spinner("Extracting food entities..."):
         entities, raw_llm = extract_food_entities(transcript)
-
-    fallback = find_potential_foods_simple(transcript, KNOWN_FOOD_WORDS, entities)
-    for food in fallback:
-        if st.checkbox(f"Include fallback '{food}' (no quantity)?"):
-            entities.append({"extracted": food, "quantity": None, "unit": None})
 
     clarified_entities = []
     matched_entities = []
@@ -159,7 +149,7 @@ def handle_transcript(transcript):
 
     st.download_button("📥 Download CSV", df.to_csv(index=False), file_name="meal_log.csv", mime="text/csv")
 
-# --- Text or voice input flow
+# --- Input logic
 if input_mode == "💬 Chat":
     user_message = st.chat_input("What did you eat today?")
     if user_message:
