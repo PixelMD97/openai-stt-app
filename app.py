@@ -217,15 +217,6 @@ if uploaded_file:
     st.markdown(highlight_transcript(normalized_transcript, clarified_entities), unsafe_allow_html=True)
 
 
-
-    st.markdown("""
-    <div style='padding-top: 10px; font-size: 14px;'>
-    <b>🟩 Green</b>: Food items (e.g., <i>pizza</i>)<br>
-    <b>🗭 Blue</b>: Quantity and unit (e.g., <i>3 slices</i>)<br>
-    <b>🟨 Yellow</b>: Vague/uncertain quantities (e.g., <i>some</i>, <i>a</i>, <i>few</i>)
-    </div>
-    """, unsafe_allow_html=True)
-
     # --- Save to Sheets ---
     send_to_google_sheets(
         meal_id=f"meal_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
