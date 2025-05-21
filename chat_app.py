@@ -13,7 +13,7 @@ from openai_stt import transcribe_with_openai
 from entity_extractor import extract_food_entities
 from swiss_food_matcher import load_food_database, match_entity
 
-# --- Inline helpers
+# --- Helpers
 def normalize_numbers(text):
     words = text.split()
     converted = []
@@ -62,35 +62,29 @@ def clean_list_for_json(data):
 def convert_to_mp3(input_path, output_path):
     try:
         subprocess.run(["ffmpeg", "-y", "-i", input_path, output_path], check=True)
-    except subprocess.CalledProcessError as e:
+    except subprocess.CalledProcessError:
         st.error("Audio conversion failed.")
-        raise e
+        raise
 
 # --- UI config
-st.set_page_config(page_title="Pathmate Chat Logger", layout="centered")
+now = datetime.now().strftime("%Y-%m-%d %H:%M")
+st.set_page_config(page_title=f"Pathmate Chat {now}", layout="centered")
 st.title("🧠 Pathmate - Chat-Based Meal Logger")
 
 with st.chat_message("assistant"):
     st.markdown("""
-    👋 Hello! This is a **prototype demo built at FHNW in collaboration with Pathmate**.
-
-    🧠 The goal is to illustrate how voice or chat input can be turned into **structured meal logging** using AI.
-
+    👋 Hello! This is a **prototype demo built at FHNW in collaboration with Pathmate**.  
+    🧠 The goal is to illustrate how voice or chat input can be turned into **structured meal logging** using AI.  
     👉 You can tell me what you ate today, or upload a voice recording — and I’ll extract food items, quantities, and units for you.
-
-    ⚠️ *Note: This is an early demo, not a medical device. Results may be imperfect and are meant for research/demo purposes only.*
     """)
 
-# --- Load food database (Swiss only)
-csv_db_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
-FOOD_DB = load_food_database(csv_db_path)
+# --- Load Swiss food DB only
+db_path = os.path.join(os.path.dirname(__file__), "swiss_food_composition_database_small.csv")
+FOOD_DB = load_food_database(db_path)
 
 # --- Session state
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
-
-if "last_transcript" not in st.session_state:
-    st.session_state.last_transcript = ""
 
 # --- Input method
 input_mode = st.radio("Choose input method:", ["💬 Chat", "🎤 Voice"], horizontal=True)
@@ -98,9 +92,8 @@ input_mode = st.radio("Choose input method:", ["💬 Chat", "🎤 Voice"], horiz
 def handle_transcript(transcript):
     st.chat_message("user").markdown(transcript)
     st.session_state.chat_history.append(("user", transcript))
-    st.session_state.last_transcript = transcript
 
-    with st.spinner("Extracting food entities..."):
+    with st.spinner("Extracting food items..."):
         entities, raw_llm = extract_food_entities(transcript)
 
     clarified_entities = []
@@ -109,17 +102,18 @@ def handle_transcript(transcript):
     st.chat_message("assistant").markdown("Here's what I found:")
 
     for entity in entities:
-        extracted = entity.get("extracted")
+        extracted = entity.get("extracted", "").strip()
         quantity = entity.get("quantity")
         unit = entity.get("unit")
 
-        if quantity in ["a", "an", "one"]:
+        if isinstance(quantity, str) and quantity.lower() in ["a", "an", "one"]:
             quantity = 1
-        elif quantity in ["some", "few", "several"]:
+        elif isinstance(quantity, str) and quantity.lower() in ["some", "few", "several"]:
             quantity = None
 
-        if quantity in [None, ""]:
-            quantity = st.number_input(f"How much {extracted}?", min_value=0.0, key=f"q_{extracted}")
+        if not quantity:
+            quantity = st.number_input(f"❓ How much {extracted}?", min_value=0.0, key=f"q_{extracted}")
+
         if not unit or unit.strip() == "":
             unit = "portion"
 
@@ -127,29 +121,32 @@ def handle_transcript(transcript):
         clarified_entities.append(clarified)
 
         match = match_entity(clarified, FOOD_DB)
-        if not match["recognized"] or match["ID"] is None:
-            correction = st.text_input(f"Couldn't match '{extracted}'. What is it?", key=f"corr_{extracted}")
+
+        if match["score"] < 0.7 or not match["recognized"]:
+            correction = st.text_input(f"🔍 '{extracted}' not clearly recognized. What did you mean?", key=f"corr_{extracted}")
             if correction:
                 match = match_entity({"extracted": correction, "quantity": quantity, "unit": unit}, FOOD_DB)
+
         matched_entities.append(match)
 
-    df = pd.DataFrame(matched_entities)
-    highlighted = highlight_transcript(transcript, clarified_entities)
-
-    st.subheader("📋 Matched Table")
-    st.dataframe(df[["extracted", "recognized", "quantity", "unit", "ID"]])
+    if matched_entities:
+        df = pd.DataFrame(matched_entities)
+        shown_cols = [col for col in ["extracted", "recognized", "quantity", "unit", "ID"] if col in df.columns]
+        st.subheader("📋 Matched Table")
+        st.dataframe(df[shown_cols])
+    else:
+        st.warning("⚠️ No valid foods detected.")
 
     st.subheader("📝 Highlighted Transcript")
-    st.markdown(highlighted, unsafe_allow_html=True)
+    st.markdown(highlight_transcript(transcript, clarified_entities), unsafe_allow_html=True)
 
-    st.chat_message("assistant").markdown(f"✅ Logged {len(matched_entities)} items successfully.")
+    st.chat_message("assistant").markdown("✅ Thank you for using the Pathmate Chat-Based Meal Logger!")
 
     st.download_button("📥 Download JSON", json.dumps(clean_list_for_json(matched_entities), indent=2),
                        file_name="meal_log.json", mime="application/json")
-
     st.download_button("📥 Download CSV", df.to_csv(index=False), file_name="meal_log.csv", mime="text/csv")
 
-# --- Input logic
+# --- Handle input
 if input_mode == "💬 Chat":
     user_message = st.chat_input("What did you eat today?")
     if user_message:
@@ -169,3 +166,9 @@ elif input_mode == "🎤 Voice":
             transcript = transcribe_with_openai(converted_path)
 
         handle_transcript(transcript)
+
+# --- Footer note (always at the bottom)
+st.markdown("""
+---  
+⚠️ *Note: This is an early demo, not a medical device. Results may be imperfect and are meant for research/demo purposes only.*
+""", unsafe_allow_html=True)
